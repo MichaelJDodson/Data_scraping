@@ -1,6 +1,7 @@
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
+import re
 
 # URL for Michael Jordan's 1984-85 game log page
 url = "https://www.basketball-reference.com/players/j/jordami01/gamelog/1985/#all_game_log_summary"
