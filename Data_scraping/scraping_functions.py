@@ -10,6 +10,7 @@ import time
 # handles http GET requests and returns the page contents as bytes to "make soup"
 def get_response_data(url: str) -> bytes:
     response = requests.get(url)
+    # ensure requests are not made too frequent
     time.sleep(5)
     if response.status_code == 200:
         # to deal with non-breaking spaces in conversion of HTML and ensure UTF-8 encoding
@@ -38,7 +39,7 @@ def find_players(start_letter: str, end_letter: str):
         # concatenate each letter to make the new url's to browse through all players
         new_url = f"https://www.basketball-reference.com/players/{letter}"
         # pass the url information to save the html data
-        get_html(new_url, rf'C:\Users\Michael\Code\Python\Data_scraping\player_page_html\letter_{letter}_data.html')
+        get_html(new_url, rf'C:\Users\Michael\Code\Python\Data_scraping\alphabetic_players_grouped\letter_{letter}_data.html')
         # sets a delay of a few seconds to try and space the number of requests to avoid 426 error
         time.sleep(10)
 
@@ -54,10 +55,10 @@ def find_players_by_year(start_letter: str, end_letter: str, start_year: int, en
     for letter in alphabet_range:
         
         # open file containing the HTML data (with error handles)
-        with open(rf'C:\Users\Michael\Code\Python\Data_scraping\player_page_html\letter_{letter}_data', 'r', encoding='utf-8') as file:
+        with open(rf'C:\Users\Michael\Code\Python\Data_scraping\alphabetic_players_grouped\letter_{letter}_data', 'r', encoding='utf-8') as file:
             contents = file.read()
         
-        soup = BeautifulSoup(contents, "html.parser")   
+        soup = BeautifulSoup(contents, "html.parser")
         table = soup.find("table", id="players").find("tbody")
         
         # iterates through the table data for players of a given last name starting letter
@@ -108,12 +109,12 @@ def get_player_metrics(player_names_with_url: list) -> DataFrame:
         if shoots:
             player_metrics.append(shoots.group(1))
         
-        # use re to collect the text for height
+        # use re to collect the number for height
         height = re.search(r'(\d+)cm', single_line_output)
         if height:
             player_metrics.append(height.group(1))
         
-        # use re to collect the text for weight
+        # use re to collect the number for weight
         weight = re.search(r'(\d+)kg', single_line_output)
         if weight:
             player_metrics.append(weight.group(1))
@@ -132,52 +133,76 @@ def get_player_metrics(player_names_with_url: list) -> DataFrame:
         
     return player_metrics_df
 
-
-###### unfinished
-# retrieve the player season statistics for all games in a given season
-def get_player_season_stats(player_name_with_url: list, season_start_year) -> DataFrame:
-    # find the 'pgl_basic' table by its tag and ID
-    table = soup.find('table', id='pgl_basic')
+# retrieve the player season statistics for all games in a given season using a 2-element list containing player name and url to their stats, and a season start year as an integer
+def get_player_season_stats(player_name_with_url: list, season_start_year: int) -> DataFrame:
+    # base url
+    baseline_url = "https://www.basketball-reference.com"
+    # pass the full url after appending to the end of the baseline url from list, along with file save location
+    get_html(rf'{baseline_url}{player_name_with_url[1]}', rf'C:\Users\Michael\Code\Python\Data_scraping\player_specific_data\{player_name_with_url[0]}_data.html')
     
-   # extract headers with improved handling for whitespace and non-breaking spaces
+    # open file containing the HTML data (with error handles)
+    with open(rf'C:\Users\Michael\Code\Python\Data_scraping\player_specific_data\{player_name_with_url[0]}_data.html', 'r', encoding='utf-8') as file:
+        contents = file.read()
+    
+    # make the soup
+    soup_1 = BeautifulSoup(contents, "html.parser")
+    # find the table of all season stats
+    table_1 = soup_1.find('table', id='per_game_stats')
+    
+    # search the table for a given year
+    for element in table_1.find('tbody').find_all('tr'):
+        
+        # use re to collect the number for start year by removing the information after the hyphen
+        year = re.search(r'(\d+)-', element.find('th').find('a').get_text())
+        if year:
+            # convert to int and compare to season_start_year
+            if int(year) == season_start_year:
+                year_url = year.group(1)
+    
+    # get html data from specific season
+    season_data = get_response_data(rf'{baseline_url}{year_url}')
+    # make some more soup
+    soup_2 = BeautifulSoup(season_data, "html.parser")
+    # find the 'pgl_basic' table by its tag and ID
+    table_2 = soup_2.find('table', id='pgl_basic')
+    # array for headers
     headers = []
-    for th in table.find('thead').find_all('th'):
+    
+    # extract headers with improved handling for whitespace and non-breaking spaces
+    for table_header in table_2.find('thead').find_all('th'):
         # remove whitespace
-        header = th.get('data-tip', th.string.strip()).replace(u'\xa0', ' ').strip()
+        header = table_header.get('data-tip', table_header.string.strip()).replace(u'\xa0', ' ').strip()
         # if header is still empty after stripping whitespace
         if not header:
-            header = th.get('data-stat', 'Unknown Header')
+            header = table_header.get('data-stat', 'Unknown Header')
             
         headers.append(header)
     
-    # extract rows, skipping any repeated header rows and ensuring only valid data rows
+    # array for row data
     rows = []
-    for row in table.find_all('tr'):
+    
+    # extract rows, skipping any repeated header rows and ensuring only valid data rows
+    for row in table_2.find_all('tr'):
         cells = [td.get_text().replace(u'\xa0', ' ') for td in row.find_all(['th', 'td'])]
         # Only add rows with the correct number of columns (matching the header count)
         if len(cells) == len(headers):
             rows.append(cells)
     
-    # create DataFrame making sure to define the headers so that specific columns can be manipulated later
     # headers are stored in a way that does not make them the first row in the DataFrame
-    df = pd.DataFrame(rows, columns=headers)
-    
-    # drop duplicate data rows
-    df = df.drop_duplicates()
-    
+    season_df = pd.DataFrame(rows, columns=headers)
+    # drop duplicate data rows, if not already properly done in the row for loop
+    season_df = season_df.drop_duplicates()
     # drop first column due to redundant data
-    df = df.drop(df.columns[0], axis=1)
-    
+    season_df = season_df.drop(season_df.columns[0], axis=1)
     # drops the first row of numbers imported and then resets the indexes
-    df = df.drop(index=0).reset_index(drop=True)
-    
+    season_df = season_df.drop(index=0).reset_index(drop=True)
     # change the default "@" in the location column
-    df['game_location'] = df['game_location'].apply(lambda x: "Away" if x == "@" else "Home")
-    # change the age column
-    df = df.rename(columns = {'Player\'s age on February 1 of the season':'player_age'})
+    season_df['game_location'] = season_df['game_location'].apply(lambda x: "Away" if x == "@" else "Home")
+    # rename the age column
+    season_df = season_df.rename(columns = {'Player\'s age on February 1 of the season':'player_age'})
     
     
     # save to CSV, removing row indexes and keeping the headers
-    df.to_csv('jordan_1984-85_game_log_2.csv', index=False, header=True)
+    season_df.to_csv(rf'{season_start_year}_{player_name_with_url[0]}.csv', index=False, header=True)
     
-    print("Game log data saved to jordan_1984-85_game_log.csv")
+    print(rf"Game log data saved to {season_start_year}_{player_name_with_url[0]}.csv")
