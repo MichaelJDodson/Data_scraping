@@ -4,6 +4,7 @@ import pandas as pd
 from pandas import DataFrame
 import re
 import time
+import pickle
 
 # contains all the functions necessary for Data_scraping on https://www.basketball-reference.com
 
@@ -208,3 +209,15 @@ def get_player_season_stats(player_name_with_url: list, season_start_year: int) 
     season_df.to_csv(rf'{season_start_year}_{player_name_with_url[0]}.csv', index=False, header=True)
     
     print(rf"Game log data saved to {season_start_year}_{player_name_with_url[0]}.csv")
+
+# utilize the pickle library to save the contents of a list or other data structure for later use
+def pickle_data(data_for_later, file_name: str):
+    with open(rf'{file_name}', 'wb') as file:
+        pickle.dump(data_for_later, file)
+        
+# retrieve the string literal of a variable name for ease of use when naming files 
+def variable_to_string_literal(variable):
+    for name, value in globals().items():
+        if value is variable:
+            return name
+    return None
