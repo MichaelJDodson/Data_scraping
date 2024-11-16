@@ -11,7 +11,7 @@ import time
 def get_response_data(url: str) -> bytes:
     response = requests.get(url)
     # ensure requests are not made too frequent
-    time.sleep(5)
+    time.sleep(10)
     if response.status_code == 200:
         # to deal with non-breaking spaces in conversion of HTML and ensure UTF-8 encoding
         response.encoding = 'utf-8'
@@ -21,6 +21,8 @@ def get_response_data(url: str) -> bytes:
 
 # pass a url and file save path to save all html data to a file
 def get_html(url: str, path: str):
+    # ensure requests are not made too frequent
+    time.sleep(10)
     response = requests.get(url)
     if response.status_code == 200:
         # open the file path and write the contents into the file (with error handles)
