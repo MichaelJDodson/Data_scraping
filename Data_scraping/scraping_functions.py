@@ -40,7 +40,7 @@ def find_players(start_letter: str, end_letter: str):
 
     for letter in alphabet_range:
         # concatenate each letter to make the new url's to browse through all players
-        new_url = f"https://www.basketball-reference.com/players/{letter}"
+        new_url = rf"{all_players_url}{letter}"
         # pass the url information to save the html data
         get_html(new_url, rf'C:\Users\Michael\Code\Python\Data_scraping\alphabetic_players_grouped\letter_{letter}_data.html')
         # sets a delay of a few seconds to try and space the number of requests to avoid 426 error
@@ -78,61 +78,60 @@ def find_players_by_year(start_letter: str, end_letter: str, start_year: int, en
     # returns a list containing the player name with part of the url to navigate to their data page
     return player_names_with_url
                 
-# retrieve the player metrics by passing the list containing the names and url
-def get_player_metrics(player_names_with_url: list) -> DataFrame:
+# retrieve the player metrics by passing the list containing the name and url of the player
+def get_player_metrics(player_name_with_url: list) -> DataFrame:
     
     baseline_url = "https://www.basketball-reference.com"
+     
+    # pass the full url after appending to the end of the baseline url from list
+    page_data = get_response_data(rf'{baseline_url}{player_name_with_url[1]}')
+    # make the soup
+    soup = BeautifulSoup(page_data, 'html.parser')
     
-    for player in player_names_with_url: 
-        # pass the full url after appending to the end of the baseline url from list
-        page_data = get_response_data(f'{baseline_url}{player[1]}')
-        # make the soup
-        soup = BeautifulSoup(page_data, 'html.parser')
-        
-        # find specific branch of HTML data
-        full_player_stats = soup.find('div', id='meta')
-        
-        # retrieve the str of data, ensure a space between lines/words, replace strange characters 
-        player_metric_string = full_player_stats.get_text(separator=" ").replace(u'\xa0', ' ').replace(u'\u25aa', '').strip()
-        
-        # normalize whitespace to a single space; split() breaks the string into words by whitespace; join() fuses them back together with only a single whitespace between each word
-        single_line_output = ' '.join(player_metric_string.split())
-        
-        # array of strings containing player info, starting with their name
-        player_metrics = [player[0]]
-        
-        # use re to collect the text between "Position:" and "Shoots:" to get player position
-        position = re.search(r'Position:\s*(.*?)\s*Shoots:', single_line_output)
-        if position:
-            # assigns the first instance this pattern is found within the given string
-            player_metrics.append(position.group(1))
-        
-        # use re to collect the text immediately after "Shoots:" for player dominant shooting hand
-        shoots = re.search(r'Shoots:\s*(\w+)', single_line_output)
-        if shoots:
-            player_metrics.append(shoots.group(1))
-        
-        # use re to collect the number for height
-        height = re.search(r'(\d+)cm', single_line_output)
-        if height:
-            player_metrics.append(height.group(1))
-        
-        # use re to collect the number for weight
-        weight = re.search(r'(\d+)kg', single_line_output)
-        if weight:
-            player_metrics.append(weight.group(1))
-        
-        # use re to collect the text for college
-        college = re.search(r'College:\s*(\w+)', single_line_output)
-        if college:
-            player_metrics.append(college.group(1))
-        else:
-            player_metrics.append("n/a")
-        
-        player_metric_headers = ['Name','Position','Shoots', 'Height', 'Weight', 'College']
-        
-        # create the DataFrame containing player info
-        player_metrics_df = pd.DataFrame([player_metrics], columns=player_metric_headers)
+    # find specific branch of HTML data
+    full_player_stats = soup.find('div', id='meta')
+    
+    # retrieve the str of data, ensure a space between lines/words, replace strange characters 
+    player_metric_string = full_player_stats.get_text(separator=" ").replace(u'\xa0', ' ').replace(u'\u25aa', '').strip()
+    
+    # normalize whitespace to a single space; split() breaks the string into words by whitespace; join() fuses them back together with only a single whitespace between each word
+    single_line_output = ' '.join(player_metric_string.split())
+    
+    # array of strings containing player info, starting with their name
+    player_metrics = [player_name_with_url[0]]
+    
+    # use re to collect the text between "Position:" and "Shoots:" to get player position
+    position = re.search(r'Position:\s*(.*?)\s*Shoots:', single_line_output)
+    if position:
+        # assigns the first instance this pattern is found within the given string
+        player_metrics.append(position.group(1))
+    
+    # use re to collect the text immediately after "Shoots:" for player dominant shooting hand
+    shoots = re.search(r'Shoots:\s*(\w+)', single_line_output)
+    if shoots:
+        player_metrics.append(shoots.group(1))
+    
+    # use re to collect the number for height
+    height = re.search(r'(\d+)cm', single_line_output)
+    if height:
+        player_metrics.append(height.group(1))
+    
+    # use re to collect the number for weight
+    weight = re.search(r'(\d+)kg', single_line_output)
+    if weight:
+        player_metrics.append(weight.group(1))
+    
+    # use re to collect the text for college
+    college = re.search(r'College:\s*(\w+)', single_line_output)
+    if college:
+        player_metrics.append(college.group(1))
+    else:
+        player_metrics.append("n/a")
+    
+    player_metric_headers = ['Name','Position','Shoots', 'Height', 'Weight', 'College']
+    
+    # create the DataFrame containing player info
+    player_metrics_df = pd.DataFrame([player_metrics], columns=player_metric_headers)
         
     return player_metrics_df
 
@@ -159,8 +158,9 @@ def get_player_season_stats(player_name_with_url: list, season_start_year: int) 
         year = re.search(r'(\d+)-', element.find('th').find('a').get_text())
         if year:
             # convert to int and compare to season_start_year
-            if int(year) == season_start_year:
-                year_url = year.group(1)
+            if int(year.group(1)) == season_start_year:
+                # assigns the year_url from the href data if the year is correct
+                year_url = element.find('th').a['href']
     
     # get html data from specific season
     season_data = get_response_data(rf'{baseline_url}{year_url}')
@@ -212,7 +212,7 @@ def get_player_season_stats(player_name_with_url: list, season_start_year: int) 
 
 # utilize the pickle library to save the contents of a list or other data structure for later use
 def pickle_data(data_for_later, file_name: str):
-    with open(rf'{file_name}', 'wb') as file:
+    with open(rf'C:\Users\Michael\Code\Python\Data_scraping\pickled_data\{file_name}', 'wb') as file:
         pickle.dump(data_for_later, file)
         
 # retrieve the string literal of a variable name for ease of use when naming files 
