@@ -162,53 +162,55 @@ def get_player_season_stats(player_name_with_url: list, season_start_year: int) 
                 # assigns the year_url from the href data if the year is correct
                 year_url = element.find('th').a['href']
     
-    # get html data from specific season
-    season_data = get_response_data(rf'{baseline_url}{year_url}')
-    # make some more soup
-    soup_2 = BeautifulSoup(season_data, "html.parser")
-    # find the 'pgl_basic' table by its tag and ID
-    table_2 = soup_2.find('table', id='pgl_basic')
-    # array for headers
-    headers = []
-    
-    # extract headers with improved handling for whitespace and non-breaking spaces
-    for table_header in table_2.find('thead').find_all('th'):
-        # remove whitespace
-        header = table_header.get('data-tip', table_header.string.strip()).replace(u'\xa0', ' ').strip()
-        # if header is still empty after stripping whitespace
-        if not header:
-            header = table_header.get('data-stat', 'Unknown Header')
-            
-        headers.append(header)
-    
-    # array for row data
-    rows = []
-    
-    # extract rows, skipping any repeated header rows and ensuring only valid data rows
-    for row in table_2.find_all('tr'):
-        cells = [td.get_text().replace(u'\xa0', ' ') for td in row.find_all(['th', 'td'])]
-        # Only add rows with the correct number of columns (matching the header count)
-        if len(cells) == len(headers):
-            rows.append(cells)
-    
-    # headers are stored in a way that does not make them the first row in the DataFrame
-    season_df = pd.DataFrame(rows, columns=headers)
-    # drop duplicate data rows, if not already properly done in the row for loop
-    season_df = season_df.drop_duplicates()
-    # drop first column due to redundant data
-    season_df = season_df.drop(season_df.columns[0], axis=1)
-    # drops the first row of numbers imported and then resets the indexes
-    season_df = season_df.drop(index=0).reset_index(drop=True)
-    # change the default "@" in the location column
-    season_df['game_location'] = season_df['game_location'].apply(lambda x: "Away" if x == "@" else "Home")
-    # rename the age column
-    season_df = season_df.rename(columns = {'Player\'s age on February 1 of the season':'player_age'})
-    
-    
-    # save to CSV, removing row indexes and keeping the headers
-    season_df.to_csv(rf'{season_start_year}_{player_name_with_url[0]}.csv', index=False, header=True)
-    
-    print(rf"Game log data saved to {season_start_year}_{player_name_with_url[0]}.csv")
+                # get html data from specific season
+                season_data = get_response_data(rf'{baseline_url}{year_url}')
+                # make some more soup
+                soup_2 = BeautifulSoup(season_data, "html.parser")
+                # find the 'pgl_basic' table by its tag and ID
+                table_2 = soup_2.find('table', id='pgl_basic')
+                # array for headers
+                headers = []
+                
+                # extract headers with improved handling for whitespace and non-breaking spaces
+                for table_header in table_2.find('thead').find_all('th'):
+                    # remove whitespace
+                    header = table_header.get('data-tip', table_header.string.strip()).replace(u'\xa0', ' ').strip()
+                    # if header is still empty after stripping whitespace
+                    if not header:
+                        header = table_header.get('data-stat', 'Unknown Header')
+                        
+                    headers.append(header)
+                
+                # array for row data
+                rows = []
+                
+                # extract rows, skipping any repeated header rows and ensuring only valid data rows
+                for row in table_2.find_all('tr'):
+                    cells = [td.get_text().replace(u'\xa0', ' ') for td in row.find_all(['th', 'td'])]
+                    # Only add rows with the correct number of columns (matching the header count)
+                    if len(cells) == len(headers):
+                        rows.append(cells)
+                
+                # headers are stored in a way that does not make them the first row in the DataFrame
+                season_df = pd.DataFrame(rows, columns=headers)
+                # drop duplicate data rows, if not already properly done in the row for loop
+                season_df = season_df.drop_duplicates()
+                # drop first column due to redundant data
+                season_df = season_df.drop(season_df.columns[0], axis=1)
+                # drops the first row of numbers imported and then resets the indexes
+                season_df = season_df.drop(index=0).reset_index(drop=True)
+                # change the default "@" in the location column
+                season_df['game_location'] = season_df['game_location'].apply(lambda x: "Away" if x == "@" else "Home")
+                # rename the age column
+                season_df = season_df.rename(columns = {'Player\'s age on February 1 of the season':'player_age'})
+                
+                
+                # save to CSV, removing row indexes and keeping the headers
+                season_df.to_csv(rf'{season_start_year}_{player_name_with_url[0]}.csv', index=False, header=True)
+                
+                print(rf"Game log data saved to {season_start_year}_{player_name_with_url[0]}.csv")
+            else:
+                print(rf"{player_name_with_url[0]} had no games in {season_start_year}")
 
 # utilize the pickle library to save the contents of a list or other data structure for later use
 def pickle_data(data_for_later, file_name: str):
