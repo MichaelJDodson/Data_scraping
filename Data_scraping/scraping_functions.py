@@ -12,7 +12,7 @@ import pickle
 def get_response_data(url: str) -> bytes:
     response = requests.get(url)
     # ensure requests are not made too frequent
-    time.sleep(10)
+    time.sleep(5)
     if response.status_code == 200:
         # to deal with non-breaking spaces in conversion of HTML and ensure UTF-8 encoding
         response.encoding = 'utf-8'
@@ -23,7 +23,7 @@ def get_response_data(url: str) -> bytes:
 # pass a url and file save path to save all html data to a file
 def get_html(url: str, path: str):
     # ensure requests are not made too frequent
-    time.sleep(10)
+    time.sleep(5)
     response = requests.get(url)
     if response.status_code == 200:
         # open the file path and write the contents into the file (with error handles)
@@ -151,14 +151,17 @@ def get_player_season_stats(player_name_with_url: list, season_start_year: int) 
     # find the table of all season stats
     table_1 = soup_1.find('table', id='per_game_stats')
     
+    # used to ensure that a season is only saved once since some pages contain multiple lines for the same year, with the same url and data
+    was_year_saved = False
+    
     # search the table for a given year
     for element in table_1.find('tbody').find_all('tr'):
         
         # use re to collect the number for start year by removing the information after the hyphen
         year = re.search(r'(\d+)-', element.find('th').find('a').get_text())
         if year:
-            # convert to int and compare to season_start_year
-            if int(year.group(1)) == season_start_year:
+            # convert to int and compare to season_start_year and ensure that the year has not yet been saved
+            if int(year.group(1)) == season_start_year and was_year_saved == False:
                 # assigns the year_url from the href data if the year is correct
                 year_url = element.find('th').a['href']
     
@@ -184,12 +187,24 @@ def get_player_season_stats(player_name_with_url: list, season_start_year: int) 
                 # array for row data
                 rows = []
                 
-                # extract rows, skipping any repeated header rows and ensuring only valid data rows
+                # extract rows, skipping any repeated header rows and ensuring only valid data rows; records the games for the regular season
                 for row in table_2.find_all('tr'):
                     cells = [td.get_text().replace(u'\xa0', ' ') for td in row.find_all(['th', 'td'])]
                     # Only add rows with the correct number of columns (matching the header count)
                     if len(cells) == len(headers):
                         rows.append(cells)
+                  
+                # find the 'pgl_basic_playoffs' table by its tag and ID
+                table_3 = soup_2.find('table', id='pgl_basic_playoffs')
+                
+                # determines if the table exists in the html
+                if table_3:
+                    # append the playoff games to the row data if the player made it to the playoffs that season    
+                    for row in table_3.find_all('tr'):
+                        cells = [td.get_text().replace(u'\xa0', ' ') for td in row.find_all(['th', 'td'])]
+                        # Only add rows with the correct number of columns (matching the header count)
+                        if len(cells) == len(headers):
+                            rows.append(cells)
                 
                 # headers are stored in a way that does not make them the first row in the DataFrame
                 season_df = pd.DataFrame(rows, columns=headers)
@@ -206,11 +221,13 @@ def get_player_season_stats(player_name_with_url: list, season_start_year: int) 
                 
                 
                 # save to CSV, removing row indexes and keeping the headers
-                season_df.to_csv(rf'{season_start_year}_{player_name_with_url[0]}.csv', index=False, header=True)
+                season_df.to_csv(rf'C:\Users\Michael\Code\Python\Data_scraping\player_csv\{season_start_year}_{player_name_with_url[0]}.csv', index=False, header=True)
+                # updates to record that that year's season was saved
+                was_year_saved = True
                 
                 print(rf"Game log data saved to {season_start_year}_{player_name_with_url[0]}.csv")
-            else:
-                print(rf"{player_name_with_url[0]} had no games in {season_start_year}")
+                
+                return season_df
 
 # utilize the pickle library to save the contents of a list or other data structure for later use
 def pickle_data(data_for_later, file_name: str):
@@ -223,3 +240,82 @@ def variable_to_string_literal(variable):
         if value is variable:
             return name
     return None
+
+# used to find all player statistics compiled for a game
+def full_games_schedule(start_year: int, end_year: int) -> list:
+    # list containing all DataFrames with each season's data; contains data of form: [year, season_schedule_df]
+    all_seasons_schedules_dfs = []
+    
+    for year in range(start_year, (end_year + 1)):
+        # save the html data for the page; corrects for difference in url and season start year
+        get_html(rf'https://www.basketball-reference.com/leagues/NBA_{(year + 1)}_games.html', rf'C:\Users\Michael\Code\Python\Data_scraping\season_schedule\{year}_schedule.html')
+        
+        # open file containing the HTML data (with error handles)
+        with open(rf'C:\Users\Michael\Code\Python\Data_scraping\season_schedule\{year}_schedule.html', 'r', encoding='utf-8') as file:
+            contents = file.read()
+        
+        # make soup
+        soup = BeautifulSoup(contents, "html.parser")
+        # find the div containing the month urls for a given season
+        month_data = soup.find('div', class_='filter')
+        
+        # added to help with debugging
+        if month_data is None:
+            print(f"No month data found for year {year}. Skipping...")
+            continue
+        
+        # initialize headers_done to minimize redundant task of collecting table headers
+        headers_done = False
+        # list for headers
+        headers = []
+        # list for row data
+        rows = []
+        
+        for month in month_data.find_all('a', href=True):
+            # base site url
+            base_url = "https://www.basketball-reference.com"
+            # obtains the html data for the given month of the season
+            season_month_data = get_response_data(rf'{base_url}{month['href']}')
+            # make soup
+            soup_2 = BeautifulSoup(season_month_data, 'html.parser')
+            # find table with season data
+            table = soup_2.find('table', id='schedule')
+            
+            # added to help with debugging
+            if table is None:
+                print(f"No table found for month {month['href']} in year {year}. Skipping...")
+                continue
+            
+            if not headers_done: 
+                # extract headers with improved handling for whitespace and non-breaking spaces
+                for table_header in table.find('thead').find_all('th'):
+                    # remove whitespace
+                    header = table_header.get('data-tip', table_header.string.strip()).replace(u'\xa0', ' ').strip()
+                    # if header is still empty after stripping whitespace
+                    if not header:
+                        header = table_header.get('data-stat', 'Unknown Header')
+                        
+                    headers.append(header)
+                # update headers_done
+                headers_done = True
+            
+            # extract rows, skipping any repeated header rows and ensuring only valid data rows; records the games for the regular season
+            for row in table.find('tbody').find_all('tr'):
+                cells = [td.get_text().replace(u'\xa0', ' ') for td in row.find_all(['th', 'td'])]
+                # Only add rows with the correct number of columns (matching the header count)
+                if len(cells) == len(headers):
+                    rows.append(cells)
+            
+        # headers are stored in a way that does not make them the first row in the DataFrame
+        season_schedule_df = pd.DataFrame(rows, columns=headers)
+        # drop duplicate data rows, if not already properly done in the row for loop
+        season_schedule_df = season_schedule_df.drop_duplicates()
+        # append the given season with the year the season started in to the list of all season DataFrames
+        all_seasons_schedules_dfs.append([year, season_schedule_df])
+        # save to CSV, removing row indexes and keeping the headers
+        season_schedule_df.to_csv(rf'C:\Users\Michael\Code\Python\Data_scraping\season_schedule\{year}_season_games.csv', index=False, header=True)
+        # updates to record that that year's season was saved
+        
+        print(rf"Season data saved to {year}_season_games.csv")
+        
+    return all_seasons_schedules_dfs
