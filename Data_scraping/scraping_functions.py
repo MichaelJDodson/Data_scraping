@@ -5,6 +5,8 @@ from pandas import DataFrame
 import re
 import time
 import pickle
+from pathlib import Path
+from datetime import datetime
 
 # contains all the functions necessary for Data_scraping on https://www.basketball-reference.com
 
@@ -319,3 +321,68 @@ def full_games_schedule(start_year: int, end_year: int) -> list:
         print(rf"Season data saved to {year}_season_games.csv")
         
     return all_seasons_schedules_dfs
+
+# takes a text file containing information for all NBA teams and transfers the info to a DataFrame for comparisons
+def get_team_abbreviations() -> DataFrame:
+    # headers for the relevant data
+    team_headers = ['team_location', 'team_abbreviation', 'team_name', 'year_active']
+    # list to collect the rows of data
+    team_table = []
+    # open text file containing team name and abbreviations for all historical and current NBA teams, excluding only a few repeat teams that "re branded" circa ~1950's
+    with open(rf'C:\Users\Michael\Code\Python\Data_scraping\nba_team_names.txt', 'r') as file:
+        for line in file:
+            # strip leading/trailing whitespace and split by tab
+            row = line.strip().split('\t')
+            team_table.append(row)
+    # place data into a DataFrame
+    team_name_df = pd.DataFrame(team_table, columns=team_headers)
+    # make all team abbreviations uppercase
+    team_name_df['team_abbreviation'] = team_name_df['team_abbreviation'].apply(lambda x: x.upper())
+    # put all team abbreviations into a list since some have multiple that are used...
+    team_name_df['team_abbreviation'] = team_name_df['team_abbreviation'].apply(lambda x: x.split(','))
+    
+    return team_name_df
+    
+# takes in a list of season schedules as well as all players during the time for the seasons
+def collect_players_in_game(season_game_schedules_df: list, players: list) -> list:
+    
+    # iterate over the list of season schedules; season_data has the form: [year, season_schedule_df]
+    for season_data in season_game_schedules_df:
+        # year the season started in
+        year = season_data[0]
+        # iterate over the dates of all the games in a given season
+        for date in season_data[1]['Date']:
+            # directory to search using pathlib library
+            folder_path = Path('C:\Users\Michael\Code\Python\Data_scraping\player_csv')
+            # iterate through files in the folder
+            for file in folder_path.iterdir():
+                # checks to see if the file name has the year the season started in
+                if file.is_file() and year in file.name:
+                    # opens the player file that has data for a given season and places it in a Data_Frame
+                    player_csv_df = pd.read_csv("your_file.csv")
+                    # iterates over the dates of games the player was a part of
+                    for game_date in player_csv_df['Date']:
+                        # use datetime library for ensuring all dates are compared in the same form, see https://docs.python.org/3/library/datetime.html#format-codes
+                        # parse date info
+                        date_from_schedule = datetime.strptime(date, "%a, %b %d, %Y")
+                        date_from_player = datetime.strptime(game_date, "%Y-%m-%d")
+                        # reformat both dates
+                        new_date_from_schedule = date_from_schedule.strftime("%m/%d/%y")
+                        new_date_from_player = date_from_player.strftime("%m/%d/%y")
+                        # check to see if the dates match                        
+                        if new_date_from_player == new_date_from_schedule:
+                            #####***** make sure to go back to where the dates for the schedule are saved and convert all the teams to the 3 letter abbreviation
+                            
+                            
+                            
+                         
+                            
+                        
+                    
+                        
+                    
+        
+    
+    
+    # has the form: [[[game date],[Team_1_name, Team_score, Team_win as boolean, [players_info including metrics/stats]], [Team_2_name, Team_score, Team_win as boolean, [players_info including metrics/stats]]], ...]
+    all_game_info = []
