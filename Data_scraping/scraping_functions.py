@@ -247,6 +247,8 @@ def variable_to_string_literal(variable):
 def full_games_schedule(start_year: int, end_year: int) -> list:
     # list containing all DataFrames with each season's data; contains data of form: [year, season_schedule_df]
     all_seasons_schedules_dfs = []
+    # retrieve the team names and abbreviations for later use
+    team_abbreviations = get_team_abbreviations()
     
     for year in range(start_year, (end_year + 1)):
         # save the html data for the page; corrects for difference in url and season start year
@@ -312,6 +314,29 @@ def full_games_schedule(start_year: int, end_year: int) -> list:
         season_schedule_df = pd.DataFrame(rows, columns=headers)
         # drop duplicate data rows, if not already properly done in the row for loop
         season_schedule_df = season_schedule_df.drop_duplicates()
+        # change away/home headers to be easier to work with later
+        season_schedule_df = season_schedule_df.rename(columns = {'Visitor/Neutral':'Away', 'Home/Neutral':'Home'})
+        # remove the 'notes' column
+        season_schedule_df = season_schedule_df.drop(season_schedule_df.columns['Notes'], axis=1)
+        # handle changing all full team names to their 3-letter abbreviations in Away column
+        for full_name in season_schedule_df['Away']:
+            for full_name_compare in team_abbreviations['team_name']:
+                # ensures that both names are stripped and have the same case for comparison
+                if full_name.strip().lower() == full_name_compare.strip().lower():
+                    # finds the row index where this condition is met to find the correct abbreviation to change it to; returns a list
+                    row_index = team_abbreviations.index[team_abbreviations['team_name'] == full_name_compare].tolist()
+                    # sets name to abbreviation; there should only be one value in the list except for a few teams where i will default to the first abbreviation in the list
+                    full_name = team_abbreviations['team_abbreviation'][row_index[0]][0]
+        # handle changing all full team names to their 3-letter abbreviations in Home column
+        for full_name in season_schedule_df['Home']:
+            for full_name_compare in team_abbreviations['team_name']:
+                # ensures that both names are stripped and have the same case for comparison
+                if full_name.strip().lower() == full_name_compare.strip().lower():
+                    # finds the row index where this condition is met to find the correct abbreviation to change it to; returns a list
+                    row_index = team_abbreviations.index[team_abbreviations['team_name'] == full_name_compare].tolist()
+                    # sets name to abbreviation; there should only be one value in the list except for a few teams where i will default to the first abbreviation in the list
+                    full_name = team_abbreviations['team_abbreviation'][row_index[0][0]]
+
         # append the given season with the year the season started in to the list of all season DataFrames
         all_seasons_schedules_dfs.append([year, season_schedule_df])
         # save to CSV, removing row indexes and keeping the headers
@@ -371,7 +396,7 @@ def collect_players_in_game(season_game_schedules_df: list, players: list) -> li
                         new_date_from_player = date_from_player.strftime("%m/%d/%y")
                         # check to see if the dates match                        
                         if new_date_from_player == new_date_from_schedule:
-                            #####***** make sure to go back to where the dates for the schedule are saved and convert all the teams to the 3 letter abbreviation
+                            
                             
                             
                             
