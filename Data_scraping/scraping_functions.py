@@ -220,7 +220,15 @@ def get_player_season_stats(player_name_with_url: list, season_start_year: int) 
                 season_df['game_location'] = season_df['game_location'].apply(lambda x: "Away" if x == "@" else "Home")
                 # rename the age column
                 season_df = season_df.rename(columns = {'Player\'s age on February 1 of the season':'player_age'})
-                
+                # fix date format for ease of comparison later
+                for date in season_df['Date']:
+                    # use datetime library for ensuring all dates are compared in the same form, see https://docs.python.org/3/library/datetime.html#format-codes
+                    # parse date info
+                    parsed_date = datetime.strptime(date, "%Y-%m-%d")
+                    #reformat date
+                    new_date = parsed_date.strftime("%m/%d/%y")
+                    # update the date
+                    date = new_date
                 
                 # save to CSV, removing row indexes and keeping the headers
                 season_df.to_csv(rf'C:\Users\Michael\Code\Python\Data_scraping\player_csv\{season_start_year}_{player_name_with_url[0]}.csv', index=False, header=True)
@@ -336,7 +344,15 @@ def full_games_schedule(start_year: int, end_year: int) -> list:
                     row_index = team_abbreviations.index[team_abbreviations['team_name'] == full_name_compare].tolist()
                     # sets name to abbreviation; there should only be one value in the list except for a few teams where i will default to the first abbreviation in the list
                     full_name = team_abbreviations['team_abbreviation'][row_index[0][0]]
-
+        # fix date format for ease of comparison later
+        for date in season_schedule_df['Date']:
+            # use datetime library for ensuring all dates are compared in the same form, see https://docs.python.org/3/library/datetime.html#format-codes
+            # parse date info
+            parsed_date = datetime.strptime(date, "%a, %b %d, %Y")
+            #reformat date
+            new_date = parsed_date.strftime("%m/%d/%y")
+            # update the date
+            date = new_date
         # append the given season with the year the season started in to the list of all season DataFrames
         all_seasons_schedules_dfs.append([year, season_schedule_df])
         # save to CSV, removing row indexes and keeping the headers
@@ -368,46 +384,44 @@ def get_team_abbreviations() -> DataFrame:
     
     return team_name_df
     
-# takes in a list of season schedules as well as all players during the time for the seasons
+# takes in a list of season schedules; assumes you already have all necessary player data saved for access
 def collect_players_in_game(season_game_schedules_df: list, players: list) -> list:
     
     # iterate over the list of season schedules; season_data has the form: [year, season_schedule_df]
     for season_data in season_game_schedules_df:
+        
         # year the season started in
-        year = season_data[0]
+        season_year = season_data[0]
+        
+
+        # has the form: [[[game date],[home_team_name, home_team_score, team_win as boolean, [players'_game_stats including personal metrics]], [away_team_name, away_team_score, team_win as boolean, [players'_game_stats including personal metrics]]], ...]
+        all_game_info = []
+
         # iterate over the dates of all the games in a given season
-        for date in season_data[1]['Date']:
+        for schedule_date in season_data[1]['Date']:
+            # get the index of the row that the given date is on for comparing other row data
+            find_row_index = season_data[1].index[season_data[1]['Date'] == schedule_date].tolist()
+            row_index = find_row_index[0]
+
+            # all pertinent information for comparing teams for each game instance
+            game_date_for_list = schedule_date
+            home_team_name = [season_data[1]['Home'][row_index]]
+            home_team_score = []
+            home_team_win = False
+            away_team_win = False
+            team_player_stats = []
+
+            # add home team name abbreviation
+            home_team_name.append(season_data[1][])
             # directory to search using pathlib library
             folder_path = Path('C:\Users\Michael\Code\Python\Data_scraping\player_csv')
             # iterate through files in the folder
             for file in folder_path.iterdir():
                 # checks to see if the file name has the year the season started in
-                if file.is_file() and year in file.name:
-                    # opens the player file that has data for a given season and places it in a Data_Frame
-                    player_csv_df = pd.read_csv("your_file.csv")
+                if file.is_file() and season_year in file.name:
+                    # opens the player file that has data for a given season and places it in a DataFrame
+                    player_csv_df = pd.read_csv(file)
                     # iterates over the dates of games the player was a part of
-                    for game_date in player_csv_df['Date']:
-                        # use datetime library for ensuring all dates are compared in the same form, see https://docs.python.org/3/library/datetime.html#format-codes
-                        # parse date info
-                        date_from_schedule = datetime.strptime(date, "%a, %b %d, %Y")
-                        date_from_player = datetime.strptime(game_date, "%Y-%m-%d")
-                        # reformat both dates
-                        new_date_from_schedule = date_from_schedule.strftime("%m/%d/%y")
-                        new_date_from_player = date_from_player.strftime("%m/%d/%y")
-                        # check to see if the dates match                        
-                        if new_date_from_player == new_date_from_schedule:
-                            
-                            
-                            
-                            
-                         
-                            
+                    if player_csv_df['Date'] == schedule_date:
+                        # add date to list
                         
-                    
-                        
-                    
-        
-    
-    
-    # has the form: [[[game date],[Team_1_name, Team_score, Team_win as boolean, [players_info including metrics/stats]], [Team_2_name, Team_score, Team_win as boolean, [players_info including metrics/stats]]], ...]
-    all_game_info = []
