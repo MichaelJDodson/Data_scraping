@@ -33,8 +33,41 @@ def get_html(url: str, path: str):
             file.write(response.text)
     else: 
         print("Failed to retrieve the page. Status code:", response.status_code)
+
+# utilize the pickle library to save the contents of a list or other data structure for later use
+def pickle_data(data_for_later, file_name: str):
+    with open(rf'C:\Users\Michael\Code\Python\Data_scraping\pickled_data\{file_name}', 'wb') as file:
+        pickle.dump(data_for_later, file)
         
-# pass alphabet range and year range for search for player metrics/statistics
+# retrieve the string literal of a variable name for ease of use when naming files 
+def variable_to_string_literal(variable):
+    for name, value in globals().items():
+        if value is variable:
+            return name
+    return None
+
+# takes a text file containing information for all NBA teams and transfers the info to a DataFrame for comparisons
+def get_team_abbreviations() -> DataFrame:
+    # headers for the relevant data
+    team_headers = ['team_location', 'team_abbreviation', 'team_name', 'year_active']
+    # list to collect the rows of data
+    team_table = []
+    # open text file containing team name and abbreviations for all historical and current NBA teams, excluding only a few repeat teams that "re branded" circa ~1950's
+    with open(rf'C:\Users\Michael\Code\Python\Data_scraping\nba_team_names.txt', 'r') as file:
+        for line in file:
+            # strip leading/trailing whitespace and split by tab
+            row = line.strip().split('\t')
+            team_table.append(row)
+    # place data into a DataFrame
+    team_name_df = pd.DataFrame(team_table, columns=team_headers)
+    # make all team abbreviations uppercase
+    team_name_df['team_abbreviation'] = team_name_df['team_abbreviation'].apply(lambda x: x.upper())
+    # separate by comma for teams that have multiple abbreviations; makes the abbreviation elements into a list
+    team_name_df['team_abbreviation'] = team_name_df['team_abbreviation'].split(',')
+
+    return team_name_df
+
+# pass alphabet range and year range for search for player metrics and statistics
 def find_players(start_letter: str, end_letter: str):
     all_players_url = "https://www.basketball-reference.com/players/"
     # create array of letters
@@ -45,8 +78,6 @@ def find_players(start_letter: str, end_letter: str):
         new_url = rf"{all_players_url}{letter}"
         # pass the url information to save the html data
         get_html(new_url, rf'C:\Users\Michael\Code\Python\Data_scraping\alphabetic_players_grouped\letter_{letter}_data.html')
-        # sets a delay of a few seconds to try and space the number of requests to avoid 426 error
-        time.sleep(10)
 
 # find players based on the seasons that they have played, pulling from html data already saved using the find_players function
 def find_players_by_year(start_letter: str, end_letter: str, start_year: int, end_year: int) -> list :
@@ -239,19 +270,7 @@ def get_player_season_stats(player_name_with_url: list, season_start_year: int) 
                 
                 return season_df
 
-# utilize the pickle library to save the contents of a list or other data structure for later use
-def pickle_data(data_for_later, file_name: str):
-    with open(rf'C:\Users\Michael\Code\Python\Data_scraping\pickled_data\{file_name}', 'wb') as file:
-        pickle.dump(data_for_later, file)
-        
-# retrieve the string literal of a variable name for ease of use when naming files 
-def variable_to_string_literal(variable):
-    for name, value in globals().items():
-        if value is variable:
-            return name
-    return None
-
-# used to find all player statistics compiled for a game
+# used to find full game schedules for the years in the given range
 def full_games_schedule(start_year: int, end_year: int) -> DataFrame:
     # list containing all DataFrames with each season's data; contains data of form: [year, season_schedule_df]
     all_seasons_schedules_headers = ['Year', 'Season_schedule_df']
@@ -259,6 +278,7 @@ def full_games_schedule(start_year: int, end_year: int) -> DataFrame:
     # retrieve the team names and abbreviations for later use
     team_abbreviations = get_team_abbreviations()
     
+    # iterate over year range
     for year in range(start_year, (end_year + 1)):
             
         # save the html data for the page; corrects for difference in url and season start year
@@ -328,27 +348,55 @@ def full_games_schedule(start_year: int, end_year: int) -> DataFrame:
         season_schedule_df = season_schedule_df.rename(columns = {'Visitor/Neutral':'Away', 'Home/Neutral':'Home','Points':'Away_points', 'PTS':'Home_points'})
         # remove the 'notes' column
         season_schedule_df = season_schedule_df.drop(columns=["Notes"])
+
+        # because of complicated team changes of name and location over the years, this whole block may have to be changed at some point; not too important though; Charlotte & New Orleans & OKC are egregious
+        # I am changing the element I am iterating over in these for loops *** can cause issues with .strip() if not careful; bad practice
         # handle changing all full team names to their 3-letter abbreviations in Away column
-        
-        ##### error in these for loops because I am trying to edit full_name in the loop making it into a list that does not have .strip()
-        
         for full_name in season_schedule_df['Away']:
             for full_name_compare in team_abbreviations['team_name']:
                 # ensures that both names are stripped and have the same case for comparison
                 if full_name.strip().lower() == full_name_compare.strip().lower():
-                    # finds the row index where this condition is met to find the correct abbreviation to change it to; returns a list
-                    row_index = team_abbreviations.index[team_abbreviations['team_name'] == full_name_compare].tolist()
-                    # sets name to a list of abbreviation(s)
-                    full_name = team_abbreviations['team_abbreviation'][row_index[0]]
+                    # finds the row index where this condition is met to find the correct abbreviation to change it to
+                    row_index = team_abbreviations.index[team_abbreviations['team_name'] == full_name_compare][0]
+                    # checks conditions for teams with multiple abbreviations (Charlotte; CHH (1989-2001) CHO (2002-present)
+                    # give team name with multiple abbreviations for comparison
+                    charlotte_hornets = 'charlotte hornets'
+                    # check for charlotte
+                    if full_name_compare.strip().lower() == charlotte_hornets:
+                        # check year range
+                        if year <= 2001 and year >= 1989:
+                            # CHH
+                            full_name = team_abbreviations.loc[row_index, 'team_abbreviation'][0]
+                        else:
+                            # CHO
+                            full_name = team_abbreviations.loc[row_index, 'team_abbreviation'][1]
+                    else:
+                        # if the team is not charlotte
+                        full_name = team_abbreviations.loc[row_index, 'team_abbreviation'][0]
+
         # handle changing all full team names to their 3-letter abbreviations in Home column
         for full_name in season_schedule_df['Home']:
             for full_name_compare in team_abbreviations['team_name']:
                 # ensures that both names are stripped and have the same case for comparison
                 if full_name.strip().lower() == full_name_compare.strip().lower():
                     # finds the row index where this condition is met to find the correct abbreviation to change it to; returns a list
-                    row_index = team_abbreviations.index[team_abbreviations['team_name'] == full_name_compare].tolist()
-                    # sets name to a list of abbreviation(s)
-                    full_name = team_abbreviations['team_abbreviation'][row_index[0]]
+                    row_index = team_abbreviations.index[team_abbreviations['team_name'] == full_name_compare][0]
+                    # checks conditions for teams with multiple abbreviations (Charlotte; CHH (1989-2001) CHO (2002-present)
+                    # give team name with multiple abbreviations for comparison
+                    charlotte_hornets = 'charlotte hornets'
+                    # check for charlotte
+                    if full_name_compare.strip().lower() == charlotte_hornets:
+                        # check year range
+                        if year <= 2001 and year >= 1989:
+                            # CHH
+                            full_name = team_abbreviations.loc[row_index, 'team_abbreviation'][0]
+                        else:
+                            # CHO
+                            full_name = team_abbreviations.loc[row_index, 'team_abbreviation'][1]
+                    else:
+                        # if the team is not charlotte
+                        full_name = team_abbreviations.loc[row_index, 'team_abbreviation'][0]
+        
         # fix date format for ease of comparison later
         for date in season_schedule_df['Date']:
             # use datetime library for ensuring all dates are compared in the same form, see https://docs.python.org/3/library/datetime.html#format-codes
@@ -368,25 +416,6 @@ def full_games_schedule(start_year: int, end_year: int) -> DataFrame:
         
     return all_seasons_schedules_dfs
 
-# takes a text file containing information for all NBA teams and transfers the info to a DataFrame for comparisons
-def get_team_abbreviations() -> DataFrame:
-    # headers for the relevant data
-    team_headers = ['team_location', 'team_abbreviation', 'team_name', 'year_active']
-    # list to collect the rows of data
-    team_table = []
-    # open text file containing team name and abbreviations for all historical and current NBA teams, excluding only a few repeat teams that "re branded" circa ~1950's
-    with open(rf'C:\Users\Michael\Code\Python\Data_scraping\nba_team_names.txt', 'r') as file:
-        for line in file:
-            # strip leading/trailing whitespace and split by tab
-            row = line.strip().split('\t')
-            team_table.append(row)
-    # place data into a DataFrame
-    team_name_df = pd.DataFrame(team_table, columns=team_headers)
-    # make all team abbreviations uppercase
-    team_name_df['team_abbreviation'] = team_name_df['team_abbreviation'].apply(lambda x: x.upper())
-    
-    return team_name_df
-    
 # takes in a list of season schedules; assumes you already have all necessary player data saved for access; this returns a russian doll of DataFrames
 def collect_players_in_game(season_game_schedules_df: DataFrame) -> DataFrame:
     
@@ -401,9 +430,7 @@ def collect_players_in_game(season_game_schedules_df: DataFrame) -> DataFrame:
     # iterate over the list of season schedules; season_data has the form: [year, season_schedule_df]
     for season_data in season_game_schedules_df:
         # get the index of the row that the given date is on for comparing other row data
-        find_row_index_1 = season_game_schedules_df.index[season_game_schedules_df['Year'] == season_data].tolist()
-        row_index_1 = find_row_index_1[0]
-        
+        row_index_1 = season_game_schedules_df.index[season_game_schedules_df['Year'] == season_data][0]
         # season_year is recorded for later use in iterating over file names **keep**
         season_year_1 = season_data[0]
         # add the year the season started in
@@ -413,8 +440,7 @@ def collect_players_in_game(season_game_schedules_df: DataFrame) -> DataFrame:
         for schedule_date in season_data[1]['Date']:
 
             # get the index of the row that the given date is on for comparing other row data
-            find_row_index_2 = season_data[1].index[season_data[1]['Date'] == schedule_date].tolist()
-            row_index_2 = find_row_index_2[0]
+            row_index_2 = season_data[1].index[season_data[1]['Date'] == schedule_date][0]
 
             # initialize DataFrame that will contain all data for a singular game
             # has the form: [[[game date],[home_team_name, home_team_score, team_win as boolean, [players'_game_stats]], [away_team_name, away_team_score, team_win as boolean, [players'_game_stats]]], ...]
@@ -470,13 +496,11 @@ def collect_players_in_game(season_game_schedules_df: DataFrame) -> DataFrame:
                 # iterates over the dates of games the player was a part of
                 for player_game_date in player_csv_df['Date']:
                     # get the index of the row that the given date is on for comparing other row data from player games
-                    find_row_index_3 = player_csv_df.index[player_csv_df['Date'] == player_game_date].tolist()
-                    row_index_3 = find_row_index_3[0]
+                    row_index_3 = player_csv_df.index[player_csv_df['Date'] == player_game_date][0]
                     # iterate over each game date in a season_year
                     for game_date in season_year_data[1]['Game_date']:
                         # get the index of the row that the given date is on for comparing other row data from season schedule
-                        find_row_index_4 = season_year_data[1].index[season_year_data[1]['Game_date'] == game_date].tolist()
-                        row_index_4 = find_row_index_4[0]
+                        row_index_4 = season_year_data[1].index[season_year_data[1]['Game_date'] == game_date][0]
                         # if there is a match between game dates for the player and on the season schedule; why ensuring same date format is important from datetime library
                         if player_game_date == game_date:
                             
