@@ -327,8 +327,11 @@ def full_games_schedule(start_year: int, end_year: int) -> DataFrame:
         # rename away/home headers along with the point columns to be easier to work with later
         season_schedule_df = season_schedule_df.rename(columns = {'Visitor/Neutral':'Away', 'Home/Neutral':'Home','Points':'Away_points', 'PTS':'Home_points'})
         # remove the 'notes' column
-        season_schedule_df = season_schedule_df.drop(season_schedule_df.columns['Notes'], axis=1)
+        season_schedule_df = season_schedule_df.drop(columns=["Notes"])
         # handle changing all full team names to their 3-letter abbreviations in Away column
+        
+        ##### error in these for loops because I am trying to edit full_name in the loop making it into a list that does not have .strip()
+        
         for full_name in season_schedule_df['Away']:
             for full_name_compare in team_abbreviations['team_name']:
                 # ensures that both names are stripped and have the same case for comparison
@@ -381,8 +384,6 @@ def get_team_abbreviations() -> DataFrame:
     team_name_df = pd.DataFrame(team_table, columns=team_headers)
     # make all team abbreviations uppercase
     team_name_df['team_abbreviation'] = team_name_df['team_abbreviation'].apply(lambda x: x.upper())
-    # put all team abbreviations into a list since some have multiple that are used...
-    team_name_df['team_abbreviation'] = team_name_df['team_abbreviation'].apply(lambda x: x.split(','))
     
     return team_name_df
     
@@ -458,7 +459,7 @@ def collect_players_in_game(season_game_schedules_df: DataFrame) -> DataFrame:
         # get the season_year for use in file search
         season_year_2 = season_year_data[0]
         # directory to search using pathlib library
-        folder_path = Path('C:\Users\Michael\Code\Python\Data_scraping\player_csv')
+        folder_path = Path(rf'C:\Users\Michael\Code\Python\Data_scraping\player_csv')
         # iterate through files in the folder
         for file in folder_path.iterdir():
             # checks to see if the file name has the year the season started in
