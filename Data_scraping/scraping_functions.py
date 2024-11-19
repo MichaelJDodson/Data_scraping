@@ -252,13 +252,15 @@ def variable_to_string_literal(variable):
     return None
 
 # used to find all player statistics compiled for a game
-def full_games_schedule(start_year: int, end_year: int) -> list:
+def full_games_schedule(start_year: int, end_year: int) -> DataFrame:
     # list containing all DataFrames with each season's data; contains data of form: [year, season_schedule_df]
-    all_seasons_schedules_dfs = []
+    all_seasons_schedules_headers = ['Year', 'Season_schedule_df']
+    all_seasons_schedules_dfs = pd.DataFrame(columns=all_seasons_schedules_headers)
     # retrieve the team names and abbreviations for later use
     team_abbreviations = get_team_abbreviations()
     
     for year in range(start_year, (end_year + 1)):
+            
         # save the html data for the page; corrects for difference in url and season start year
         get_html(rf'https://www.basketball-reference.com/leagues/NBA_{(year + 1)}_games.html', rf'C:\Users\Michael\Code\Python\Data_scraping\season_schedule\{year}_schedule.html')
         
@@ -333,8 +335,8 @@ def full_games_schedule(start_year: int, end_year: int) -> list:
                 if full_name.strip().lower() == full_name_compare.strip().lower():
                     # finds the row index where this condition is met to find the correct abbreviation to change it to; returns a list
                     row_index = team_abbreviations.index[team_abbreviations['team_name'] == full_name_compare].tolist()
-                    # sets name to abbreviation; there should only be one value in the list except for a few teams where i will default to the first abbreviation in the list
-                    full_name = team_abbreviations['team_abbreviation'][row_index[0]][0]
+                    # sets name to a list of abbreviation(s)
+                    full_name = team_abbreviations['team_abbreviation'][row_index[0]]
         # handle changing all full team names to their 3-letter abbreviations in Home column
         for full_name in season_schedule_df['Home']:
             for full_name_compare in team_abbreviations['team_name']:
@@ -342,8 +344,8 @@ def full_games_schedule(start_year: int, end_year: int) -> list:
                 if full_name.strip().lower() == full_name_compare.strip().lower():
                     # finds the row index where this condition is met to find the correct abbreviation to change it to; returns a list
                     row_index = team_abbreviations.index[team_abbreviations['team_name'] == full_name_compare].tolist()
-                    # sets name to abbreviation; there should only be one value in the list except for a few teams where i will default to the first abbreviation in the list
-                    full_name = team_abbreviations['team_abbreviation'][row_index[0][0]]
+                    # sets name to a list of abbreviation(s)
+                    full_name = team_abbreviations['team_abbreviation'][row_index[0]]
         # fix date format for ease of comparison later
         for date in season_schedule_df['Date']:
             # use datetime library for ensuring all dates are compared in the same form, see https://docs.python.org/3/library/datetime.html#format-codes
@@ -354,7 +356,7 @@ def full_games_schedule(start_year: int, end_year: int) -> list:
             # update the date
             date = new_date
         # append the given season with the year the season started in to the list of all season DataFrames
-        all_seasons_schedules_dfs.append([year, season_schedule_df])
+        all_seasons_schedules_dfs.loc[(year - start_year)] = [year, season_schedule_df]
         # save to CSV, removing row indexes and keeping the headers
         season_schedule_df.to_csv(rf'C:\Users\Michael\Code\Python\Data_scraping\season_schedule\{year}_season_games.csv', index=False, header=True)
         # updates to record that that year's season was saved
@@ -385,7 +387,7 @@ def get_team_abbreviations() -> DataFrame:
     return team_name_df
     
 # takes in a list of season schedules; assumes you already have all necessary player data saved for access; this returns a russian doll of DataFrames
-def collect_players_in_game(season_game_schedules_df: list, players: list) -> list:
+def collect_players_in_game(season_game_schedules_df: DataFrame) -> DataFrame:
     
     # make headers for aggregate of all games
     aggregate_headers = ['Season_start_year', 'Season_game_data']
@@ -393,26 +395,34 @@ def collect_players_in_game(season_game_schedules_df: list, players: list) -> li
     # contains all_game_info for every single game across the seasons input
     aggregate_of_all_game_info_df = pd.DataFrame(columns=aggregate_headers)
     
+    # *** create all the portions of the DataFrame for a given season before opening any player files so that each player file for a given season only ends up having to be opened once
+    
     # iterate over the list of season schedules; season_data has the form: [year, season_schedule_df]
     for season_data in season_game_schedules_df:
+        # get the index of the row that the given date is on for comparing other row data
+        find_row_index_1 = season_game_schedules_df.index[season_game_schedules_df['Year'] == season_data].tolist()
+        row_index_1 = find_row_index_1[0]
         
-        # year the season started in
-        season_year = season_data[0]
+        # season_year is recorded for later use in iterating over file names **keep**
+        season_year_1 = season_data[0]
+        # add the year the season started in
+        aggregate_of_all_game_info_df.loc[row_index_1, 'Season_start_year'] = season_year_1
 
         # iterate over the dates of all the games in a given season
         for schedule_date in season_data[1]['Date']:
 
             # get the index of the row that the given date is on for comparing other row data
-            find_row_index = season_data[1].index[season_data[1]['Date'] == schedule_date].tolist()
-            row_index = find_row_index[0]
+            find_row_index_2 = season_data[1].index[season_data[1]['Date'] == schedule_date].tolist()
+            row_index_2 = find_row_index_2[0]
 
             # initialize DataFrame that will contain all data for a singular game
             # has the form: [[[game date],[home_team_name, home_team_score, team_win as boolean, [players'_game_stats]], [away_team_name, away_team_score, team_win as boolean, [players'_game_stats]]], ...]
+            # Home_team_stats and Away_team_stats will be added to via for loop later in this method (scroll down)
             all_game_headers = ['Game_date', 'Home_team_stats', 'Away_team_stats']
             all_game_info_df = pd.DataFrame(columns=all_game_headers)
 
             # add game date
-            all_game_info_df.loc[row_index, 'Game_date', ] = schedule_date
+            all_game_info_df.loc[row_index_2, 'Game_date', ] = schedule_date
 
             # collect team stats in DataFrames
             team_headers = ['Team', 'Score', 'Team_win', 'Players_game_stats' ]
@@ -421,17 +431,17 @@ def collect_players_in_game(season_game_schedules_df: list, players: list) -> li
 
             # all pertinent information for comparing teams for each game instance
             # add home team name
-            home_team_aggregate_df.loc[0,'Team'] = season_data[1]['Home'][row_index]
+            home_team_aggregate_df.loc[0,'Team'] = season_data[1]['Home'][row_index_2]
             # add home team score
-            home_team_score = season_data[1]['Home_points'][row_index]
+            home_team_score = season_data[1]['Home_points'][row_index_2]
             home_team_aggregate_df.loc[0,'Score'] = home_team_score
             # add away team name
-            away_team_aggregate_df.loc[0, 'Team'] = season_data[1]['Away'][row_index]
+            away_team_aggregate_df.loc[0, 'Team'] = season_data[1]['Away'][row_index_2]
             # add away team score
-            away_team_score = season_data[1]['Away_points'][row_index]
+            away_team_score = season_data[1]['Away_points'][row_index_2]
             away_team_aggregate_df.loc[0, 'Score'] = away_team_score
             
-            # determine which team won and set the booleans accordingly then add info to the appropriate DataFrames
+            # determine which team won and set the booleans accordingly, then add info to the appropriate DataFrames
             if home_team_score > away_team_score:
                 home_team_aggregate_df.loc[0,'Team_win'] = True
                 away_team_aggregate_df.loc[0,'Team_win'] = False
@@ -439,19 +449,67 @@ def collect_players_in_game(season_game_schedules_df: list, players: list) -> li
                 home_team_aggregate_df.loc[0,'Team_win'] = False
                 away_team_aggregate_df.loc[0,'Team_win'] = True
 
-            # collect player stats
-            home_team_player_stats = []
-            away_team_player_stats = []
+            # appends to aggregate_of_all_game_info_df
+            aggregate_of_all_game_info_df.loc[row_index_1, 'Season_game_data' ] = all_game_info_df
 
-            # directory to search using pathlib library
-            folder_path = Path('C:\Users\Michael\Code\Python\Data_scraping\player_csv')
-            # iterate through files in the folder
-            for file in folder_path.iterdir():
-                # checks to see if the file name has the year the season started in
-                if file.is_file() and season_year in file.name:
-                    # opens the player file that has data for a given season and places it in a DataFrame
-                    player_csv_df = pd.read_csv(file)
-                    # iterates over the dates of games the player was a part of
-                    if player_csv_df['Date'] == schedule_date:
-                        # add date to list
-                        
+
+    # iterate back over the newly made DataFrame to fill in player data; aggregate_of_all_game_info_df has data of the form: ['Season_start_year', 'Season_game_data']
+    for season_year_data in aggregate_of_all_game_info_df:
+        # get the season_year for use in file search
+        season_year_2 = season_year_data[0]
+        # directory to search using pathlib library
+        folder_path = Path('C:\Users\Michael\Code\Python\Data_scraping\player_csv')
+        # iterate through files in the folder
+        for file in folder_path.iterdir():
+            # checks to see if the file name has the year the season started in
+            if file.is_file() and season_year_2 in file.name:
+                # opens the player file that has data for a given season and places it in a DataFrame
+                player_csv_df = pd.read_csv(file)
+                
+                # iterates over the dates of games the player was a part of
+                for player_game_date in player_csv_df['Date']:
+                    # get the index of the row that the given date is on for comparing other row data from player games
+                    find_row_index_3 = player_csv_df.index[player_csv_df['Date'] == player_game_date].tolist()
+                    row_index_3 = find_row_index_3[0]
+                    # iterate over each game date in a season_year
+                    for game_date in season_year_data[1]['Game_date']:
+                        # get the index of the row that the given date is on for comparing other row data from season schedule
+                        find_row_index_4 = season_year_data[1].index[season_year_data[1]['Game_date'] == game_date].tolist()
+                        row_index_4 = find_row_index_4[0]
+                        # if there is a match between game dates for the player and on the season schedule; why ensuring same date format is important from datetime library
+                        if player_game_date == game_date:
+                            
+                            # check both the Home and Away team dfs
+                            
+                            # checks home team
+                            # makes sure to loop through the list of possible team abbreviations, although most have just one *** may change how this functions later
+                            for team_abbreviation in season_year_data[1].loc[row_index_4,'Home_team_stats'].loc['Team']:
+                                
+                                # match date with team that played since several games occur on the same dates
+                                if team_abbreviation == player_csv_df.loc[row_index_3, 'Team']:
+                                    # check to see if there is a DataFrame to ensure it is only added once
+                                    if season_year_data[1].loc[row_index_4,'Home_team_stats'].loc['Players_game_stats'].isnull():
+                                        # if the DataFrame does not already exist at that element
+                                        # set the column headers to be the same as what is in all the player csv files and add the appropriate player stats
+                                        new_df = pd.DataFrame(player_csv_df[row_index_3], columns=player_csv_df.columns)
+                                        season_year_data[1].loc[row_index_4,'Home_team_stats'].loc['Players_game_stats'] = new_df
+                                    else:
+                                        # if the DataFrame already exists at that element
+                                        season_year_data[1].loc[row_index_4,'Home_team_stats'].loc['Players_game_stats'].concat(player_csv_df[row_index_3])
+                            
+                            
+                            # checks away team
+                            # makes sure to loop through the list of possible team abbreviations, although most have just one *** may change how this functions later
+                            for team_abbreviation in season_year_data[1].loc[row_index_4,'Away_team_stats'].loc['Team']:
+                                
+                                # match date with team that played since several games occur on the same dates
+                                if team_abbreviation == player_csv_df.loc[row_index_3, 'Team']:
+                                    # check to see if there is a DataFrame to ensure it is only added once
+                                    if season_year_data[1].loc[row_index_4,'Away_team_stats'].loc['Players_game_stats'].isnull():
+                                        # if the DataFrame does not already exist at that element
+                                        # set the column headers to be the same as what is in all the player csv files and add the appropriate player stats
+                                        new_df = pd.DataFrame(player_csv_df[row_index_3], columns=player_csv_df.columns)
+                                        season_year_data[1].loc[row_index_4,'Away_team_stats'].loc['Players_game_stats'] = new_df
+                                    else:
+                                        # if the DataFrame already exists at that element
+                                        season_year_data[1].loc[row_index_4,'Away_team_stats'].loc['Players_game_stats'].concat(player_csv_df[row_index_3])
