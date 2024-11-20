@@ -1,12 +1,15 @@
+# standard library
+import re
+import time
+from pathlib import Path
+from datetime import datetime
+
+# third party library
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
 from pandas import DataFrame
-import re
-import time
 import pickle
-from pathlib import Path
-from datetime import datetime
 
 # contains all the functions necessary for Data_scraping on https://www.basketball-reference.com
 
@@ -14,7 +17,7 @@ from datetime import datetime
 def get_response_data(url: str) -> bytes:
     response = requests.get(url)
     # ensure requests are not made too frequent
-    time.sleep(5)
+    time.sleep(10)
     if response.status_code == 200:
         # to deal with non-breaking spaces in conversion of HTML and ensure UTF-8 encoding
         response.encoding = 'utf-8'
@@ -25,7 +28,7 @@ def get_response_data(url: str) -> bytes:
 # pass a url and file save path to save all html data to a file
 def get_html(url: str, path: str):
     # ensure requests are not made too frequent
-    time.sleep(5)
+    time.sleep(10)
     response = requests.get(url)
     if response.status_code == 200:
         # open the file path and write the contents into the file (with error handles)
@@ -46,7 +49,7 @@ def variable_to_string_literal(variable):
             return name
     return None
 
-# takes a text file containing information for all NBA teams and transfers the info to a DataFrame for comparisons
+# takes a text file containing information for all NBA teams and transfers the info to a DataFrame for comparisons; * These abbreviations are the ones used by basketball-reference, not necessarily the "official" ones
 def get_team_abbreviations() -> DataFrame:
     # headers for the relevant data
     team_headers = ['team_location', 'team_abbreviation', 'team_name', 'year_active']
@@ -63,9 +66,54 @@ def get_team_abbreviations() -> DataFrame:
     # make all team abbreviations uppercase
     team_name_df['team_abbreviation'] = team_name_df['team_abbreviation'].apply(lambda x: x.upper())
     # separate by comma for teams that have multiple abbreviations; makes the abbreviation elements into a list
-    team_name_df['team_abbreviation'] = team_name_df['team_abbreviation'].split(',')
+    team_name_df['team_abbreviation'] = team_name_df['team_abbreviation'].apply(lambda x: x.split(','))
 
     return team_name_df
+
+# takes in a full team name with the season year, returns the abbreviation
+def full_to_abbreviation(full_name: str, year: int) -> str:
+    # get abbreviations for all teams
+    team_abbreviations = get_team_abbreviations()
+    # strip team name and lower case for comparison
+    full_name = full_name.strip().lower()
+    
+    for full_name_compare in team_abbreviations['team_name']:
+        if full_name == full_name_compare.strip().lower():
+            row_index = team_abbreviations.index[team_abbreviations['team_name'] == full_name_compare][0]
+            
+            charlotte_hornets = 'charlotte hornets'
+            if full_name_compare.strip().lower() == charlotte_hornets:
+                if 1989 <= year <= 2001:
+                    # CHH
+                    return team_abbreviations.loc[row_index, 'team_abbreviation'][0]
+                else:
+                    # CHO
+                    return team_abbreviations.loc[row_index, 'team_abbreviation'][1]
+            else:
+                # default abbreviation if not charlotte
+                return team_abbreviations.loc[row_index, 'team_abbreviation'][0]
+    # return original name if no match
+    return full_name
+
+# handles date conversion for date formats in player game data
+def player_date_change(player_date: str) -> str:
+    # use datetime library for ensuring all dates are compared in the same form, see https://docs.python.org/3/library/datetime.html#format-codes
+    # parse date info
+    parsed_date = datetime.strptime(player_date, "%Y-%m-%d")
+    #reformat date
+    new_date = parsed_date.strftime("%m/%d/%y")
+    # return updated date
+    return new_date
+    
+# handles date conversion for date formats in schedule game data  
+def schedule_date_change(schedule_date: str) -> str:
+    # use datetime library for ensuring all dates are compared in the same form, see https://docs.python.org/3/library/datetime.html#format-codes
+    # parse date info
+    parsed_date = datetime.strptime(schedule_date, "%a, %b %d, %Y")
+    #reformat date
+    new_date = parsed_date.strftime("%m/%d/%y")
+    # return updated date
+    return new_date
 
 # pass alphabet range and year range for search for player metrics and statistics
 def find_players(start_letter: str, end_letter: str):
@@ -193,7 +241,7 @@ def get_player_season_stats(player_name_with_url: list, season_start_year: int) 
         # use re to collect the number for start year by removing the information after the hyphen
         year = re.search(r'(\d+)-', element.find('th').find('a').get_text())
         if year:
-            # convert to int and compare to season_start_year and ensure that the year has not yet been saved
+            # convert to int and compare to season_start_year and ensure that the year has not been saved yet
             if int(year.group(1)) == season_start_year and was_year_saved == False:
                 # assigns the year_url from the href data if the year is correct
                 year_url = element.find('th').a['href']
@@ -252,14 +300,7 @@ def get_player_season_stats(player_name_with_url: list, season_start_year: int) 
                 # rename the age column
                 season_df = season_df.rename(columns = {'Player\'s age on February 1 of the season':'player_age'})
                 # fix date format for ease of comparison later
-                for date in season_df['Date']:
-                    # use datetime library for ensuring all dates are compared in the same form, see https://docs.python.org/3/library/datetime.html#format-codes
-                    # parse date info
-                    parsed_date = datetime.strptime(date, "%Y-%m-%d")
-                    #reformat date
-                    new_date = parsed_date.strftime("%m/%d/%y")
-                    # update the date
-                    date = new_date
+                season_df['Date'] = season_df['Date'].apply(lambda x: player_date_change(x))
                 
                 # save to CSV, removing row indexes and keeping the headers
                 season_df.to_csv(rf'C:\Users\Michael\Code\Python\Data_scraping\player_csv\{season_start_year}_{player_name_with_url[0]}.csv', index=False, header=True)
@@ -273,10 +314,8 @@ def get_player_season_stats(player_name_with_url: list, season_start_year: int) 
 # used to find full game schedules for the years in the given range
 def full_games_schedule(start_year: int, end_year: int) -> DataFrame:
     # list containing all DataFrames with each season's data; contains data of form: [year, season_schedule_df]
-    all_seasons_schedules_headers = ['Year', 'Season_schedule_df']
-    all_seasons_schedules_dfs = pd.DataFrame(columns=all_seasons_schedules_headers)
-    # retrieve the team names and abbreviations for later use
-    team_abbreviations = get_team_abbreviations()
+    seasons_schedules_headers = ['Year', 'Season_schedule_df']
+    all_seasons_schedules_dfs = pd.DataFrame(columns=seasons_schedules_headers)
     
     # iterate over year range
     for year in range(start_year, (end_year + 1)):
@@ -340,77 +379,29 @@ def full_games_schedule(start_year: int, end_year: int) -> DataFrame:
                 if len(cells) == len(headers):
                     rows.append(cells)
             
-        # headers are stored in a way that does not make them the first row in the DataFrame
+        # make DataFrame for the given season schedule
         season_schedule_df = pd.DataFrame(rows, columns=headers)
         # drop duplicate data rows, if not already properly done in the row for loop
         season_schedule_df = season_schedule_df.drop_duplicates()
         # rename away/home headers along with the point columns to be easier to work with later
         season_schedule_df = season_schedule_df.rename(columns = {'Visitor/Neutral':'Away', 'Home/Neutral':'Home','Points':'Away_points', 'PTS':'Home_points'})
-        # remove the 'notes' column
-        season_schedule_df = season_schedule_df.drop(columns=["Notes"])
+        # remove a handful of columns that doe not have useful data
+        season_schedule_df = season_schedule_df.drop(columns={'Notes', 'box_score_text', 'overtimes', 'Length of Game'})
 
-        # because of complicated team changes of name and location over the years, this whole block may have to be changed at some point; not too important though; Charlotte & New Orleans & OKC are egregious
-        # I am changing the element I am iterating over in these for loops *** can cause issues with .strip() if not careful; bad practice
-        # handle changing all full team names to their 3-letter abbreviations in Away column
-        for full_name in season_schedule_df['Away']:
-            for full_name_compare in team_abbreviations['team_name']:
-                # ensures that both names are stripped and have the same case for comparison
-                if full_name.strip().lower() == full_name_compare.strip().lower():
-                    # finds the row index where this condition is met to find the correct abbreviation to change it to
-                    row_index = team_abbreviations.index[team_abbreviations['team_name'] == full_name_compare][0]
-                    # checks conditions for teams with multiple abbreviations (Charlotte; CHH (1989-2001) CHO (2002-present)
-                    # give team name with multiple abbreviations for comparison
-                    charlotte_hornets = 'charlotte hornets'
-                    # check for charlotte
-                    if full_name_compare.strip().lower() == charlotte_hornets:
-                        # check year range
-                        if year <= 2001 and year >= 1989:
-                            # CHH
-                            full_name = team_abbreviations.loc[row_index, 'team_abbreviation'][0]
-                        else:
-                            # CHO
-                            full_name = team_abbreviations.loc[row_index, 'team_abbreviation'][1]
-                    else:
-                        # if the team is not charlotte
-                        full_name = team_abbreviations.loc[row_index, 'team_abbreviation'][0]
+        # full team names to their abbreviations in Home
+        season_schedule_df['Home'] = season_schedule_df['Home'].apply(lambda x: full_to_abbreviation(x, year))
+        # full team names to their abbreviations in Away
+        season_schedule_df['Away'] = season_schedule_df['Away'].apply(lambda x: full_to_abbreviation(x, year))
+        # fix date format
+        season_schedule_df['Date'] = season_schedule_df['Date'].apply(lambda x: schedule_date_change(x))
 
-        # handle changing all full team names to their 3-letter abbreviations in Home column
-        for full_name in season_schedule_df['Home']:
-            for full_name_compare in team_abbreviations['team_name']:
-                # ensures that both names are stripped and have the same case for comparison
-                if full_name.strip().lower() == full_name_compare.strip().lower():
-                    # finds the row index where this condition is met to find the correct abbreviation to change it to; returns a list
-                    row_index = team_abbreviations.index[team_abbreviations['team_name'] == full_name_compare][0]
-                    # checks conditions for teams with multiple abbreviations (Charlotte; CHH (1989-2001) CHO (2002-present)
-                    # give team name with multiple abbreviations for comparison
-                    charlotte_hornets = 'charlotte hornets'
-                    # check for charlotte
-                    if full_name_compare.strip().lower() == charlotte_hornets:
-                        # check year range
-                        if year <= 2001 and year >= 1989:
-                            # CHH
-                            full_name = team_abbreviations.loc[row_index, 'team_abbreviation'][0]
-                        else:
-                            # CHO
-                            full_name = team_abbreviations.loc[row_index, 'team_abbreviation'][1]
-                    else:
-                        # if the team is not charlotte
-                        full_name = team_abbreviations.loc[row_index, 'team_abbreviation'][0]
-        
-        # fix date format for ease of comparison later
-        for date in season_schedule_df['Date']:
-            # use datetime library for ensuring all dates are compared in the same form, see https://docs.python.org/3/library/datetime.html#format-codes
-            # parse date info
-            parsed_date = datetime.strptime(date, "%a, %b %d, %Y")
-            #reformat date
-            new_date = parsed_date.strftime("%m/%d/%y")
-            # update the date
-            date = new_date
-        # append the given season with the year the season started in to the list of all season DataFrames
-        all_seasons_schedules_dfs.loc[(year - start_year)] = [year, season_schedule_df]
+        df_list = [[year, season_schedule_df]]
+        # creates new DataFrame that contains both the season year and season schedule using the same headers as all_season_schedules to concatenate
+        total_season_info_df = pd.DataFrame(df_list, columns=seasons_schedules_headers)
+        # add total_season_info_df to the full DataFrame of all seasons
+        all_seasons_schedules_dfs = pd.concat([all_seasons_schedules_dfs, total_season_info_df])
         # save to CSV, removing row indexes and keeping the headers
         season_schedule_df.to_csv(rf'C:\Users\Michael\Code\Python\Data_scraping\season_schedule\{year}_season_games.csv', index=False, header=True)
-        # updates to record that that year's season was saved
         
         print(rf"Season data saved to {year}_season_games.csv")
         
