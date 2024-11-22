@@ -4,12 +4,13 @@ import time
 from pathlib import Path
 from datetime import datetime
 import random
+import os
 
 # third party library
-import requests
-from selenium import webdriver
-from selenium.webdriver.common.by import By
+from selenium.webdriver.firefox.service import Service
 from selenium.webdriver.firefox.options import Options
+from selenium import webdriver
+from selenium.common.exceptions import WebDriverException, TimeoutException
 from bs4 import BeautifulSoup
 import pandas as pd
 from pandas import DataFrame
@@ -17,41 +18,62 @@ import pickle
 
 # contains all the functions necessary for Data_scraping on https://www.basketball-reference.com
 
-# used selenium to load page for given url for dynamic html scraping; if saving the html data from a page it does not return a string
-def selenium_request(request_url: str, save_html: bool = False, file_path: str = None) -> str:
+# use selenium to load page for given url for dynamic html scraping; if saving the html data from a page it does not return a string
+def selenium_request(firefox_driver: webdriver.Firefox, request_url: str, save_html: bool = False, file_path: str = None) -> str:
     
-    # set up Firefox in headless mode
-    options = Options()
-    # run without GUI, doesn't visually open firefox
-    options.add_argument('--headless')
-    driver = webdriver.Firefox(options=options)
-    
-    # retry count default
+    # max retries
     retry = 10
-    # dynamically changes the time between server requests in the event of server rate limiting issues
+    
     for attempt in range(retry):
         try:
-            # open the URL
-            driver.get(request_url)
-            # get the page source
-            html_source = driver.page_source
             
-            # allow time for JavaScript to load (adjust as needed)
-            time.sleep(3)
+            # open URL
+            firefox_driver.get(request_url)
+            
+            # allow time for JavaScript to load
+            time.sleep(10)
+            
+            # page source
+            html_source = firefox_driver.page_source
             
             # if saving html data
             if save_html and file_path:
-                # open the file path and write the contents into the file (with error handles)
                 with open(file_path, 'w', encoding='utf-8') as file:
-                    file.write(html_source.text)
-            elif not save_html:
+                    file.write(html_source)
+                print(f"HTML saved to {file_path}")
+            
+            # quit driver and return HTML if not saving
+            if not save_html:
                 return html_source
-        # runs in the event of an exception
-        except requests.exceptions.RequestException as e:
+            
+            # break the loop if successful
+            break
+        
+        except (WebDriverException, TimeoutException) as e:
+            # handle Selenium-specific exceptions
             wait = 2 ** attempt + random.uniform(0, 1)
-            print(e)
+            print(f"Attempt {attempt + 1} failed: {e}. Retrying in {wait:.2f} seconds.")
             time.sleep(wait)
+        
+# only want to initialize the driver a single time within a function before iterating over a list of urls * make sure to quit the driver after use
+def initialize_selenium_driver() -> webdriver.Firefox:
+    options = Options()
+    # run without GUI, extensions, and gpu to reduce resource usage
+    options.add_argument('--headless')
+    options.add_argument('--disable-extensions')
+    options.add_argument('--disable-gpu')
+    
+    # use a specific version of GeckoDriver (manually installed)
+    gecko_path = rf'C:\Users\Michael\geckodriver-v0.35.0-win64\geckodriver.exe'
+    if not os.path.exists(gecko_path):
+        raise FileNotFoundError(f"GeckoDriver not found at {gecko_path}. Please download it manually.")
 
+    service = Service(gecko_path)
+    
+    driver = webdriver.Firefox(service=service, options=options)
+    
+    return driver
+    
 # utilize the pickle library to save the contents of a list or other data structure for later use
 def pickle_data(data_for_later, file_name: str):
     with open(rf'C:\Users\Michael\Code\Python\Data_scraping\pickled_data\{file_name}', 'wb') as file:
@@ -110,29 +132,25 @@ def full_to_abbreviation(full_name: str, year: int) -> str:
     # return original name if no match
     return full_name
 
-# handles date conversion for date formats in player game data
-def player_date_change(player_date: str) -> str:
+# handles date conversion for date formats in schedule and player data
+def date_change(date: str, is_player: bool = False) -> str:
     # use datetime library for ensuring all dates are compared in the same form, see https://docs.python.org/3/library/datetime.html#format-codes
-    # parse date info
-    parsed_date = datetime.strptime(player_date, "%Y-%m-%d")
+    if is_player:
+        # parse date info
+        parsed_date = datetime.strptime(date, "%Y-%m-%d")
+    elif not is_player:
+        # parse date info
+        parsed_date = datetime.strptime(date, "%a, %b %d, %Y")
+    
     #reformat date
     new_date = parsed_date.strftime("%m/%d/%y")
     # return updated date
     return new_date
     
-# handles date conversion for date formats in schedule game data  
-def schedule_date_change(schedule_date: str) -> str:
-    # use datetime library for ensuring all dates are compared in the same form, see https://docs.python.org/3/library/datetime.html#format-codes
-    # parse date info
-    parsed_date = datetime.strptime(schedule_date, "%a, %b %d, %Y")
-    #reformat date
-    new_date = parsed_date.strftime("%m/%d/%y")
-    # return updated date
-    return new_date
-
 # pass alphabet range and year range for search for player metrics and statistics
 def find_players(start_letter: str, end_letter: str):
     all_players_url = "https://www.basketball-reference.com/players/"
+    web_driver = initialize_selenium_driver()
     # create array of letters
     alphabet_range = [chr(i) for i in range(ord(start_letter), ord(end_letter) + 1)]
 
@@ -140,7 +158,10 @@ def find_players(start_letter: str, end_letter: str):
         # concatenate each letter to make the new url's to browse through all players
         new_url = rf"{all_players_url}{letter}"
         # pass the url information to save the html data
-        selenium_request(new_url, True, rf'C:\Users\Michael\Code\Python\Data_scraping\alphabetic_players_grouped\letter_{letter}_data.html')
+        selenium_request(firefox_driver=web_driver, request_url=new_url, save_html=True, file_path=rf'C:\Users\Michael\Code\Python\Data_scraping\alphabetic_players_grouped\letter_{letter}_data.html')
+    
+    # quit web driver
+    web_driver.quit()
 
 # find players based on the seasons that they have played, pulling from html data already saved using the find_players function
 def find_players_by_year(start_letter: str, end_letter: str, start_year: int, end_year: int) -> list :
@@ -176,11 +197,12 @@ def find_players_by_year(start_letter: str, end_letter: str, start_year: int, en
                 
 # retrieve the player metrics by passing the list containing the name and url of the player
 def get_player_metrics(player_name_with_url: list) -> DataFrame:
-    
+    # base url and web driver
     baseline_url = "https://www.basketball-reference.com"
+    web_driver = initialize_selenium_driver()
      
     # pass the full url after appending to the end of the baseline url from list
-    page_data = selenium_request(rf'{baseline_url}{player_name_with_url[1]}')
+    page_data = selenium_request(firefox_driver=web_driver, request_url=rf'{baseline_url}{player_name_with_url[1]}')
     # make the soup
     soup = BeautifulSoup(page_data, 'html.parser')
     
@@ -228,20 +250,23 @@ def get_player_metrics(player_name_with_url: list) -> DataFrame:
     
     # create the DataFrame containing player info
     player_metrics_df = pd.DataFrame([player_metrics], columns=player_metric_headers)
-        
+    
+    # quit driver
+    web_driver.quit()
     return player_metrics_df
 
 # retrieve the player season statistics for all games in a given range of seasons using a list containing [player name, url to their stats]
 def get_player_season_stats(player_name_with_url_list: list, season_range: range):
     # make list from year range
     season_list = list(season_range)
+    web_driver = initialize_selenium_driver()
     
     # iterate over list of player info [ player name, player url]
     for player_info in player_name_with_url_list:  
         # base url
         baseline_url = "https://www.basketball-reference.com"
         # pass the full url after appending to the end of the baseline url from list, along with file save location
-        selenium_request(rf'{baseline_url}{player_info[1]}', True, rf'C:\Users\Michael\Code\Python\Data_scraping\player_specific_data\{player_info[0]}_data.html')
+        selenium_request(firefox_driver=web_driver, request_url=rf'{baseline_url}{player_info[1]}', save_html=True, file_path=rf'C:\Users\Michael\Code\Python\Data_scraping\player_specific_data\{player_info[0]}_data.html')
         # open player html page
         with open(rf'C:\Users\Michael\Code\Python\Data_scraping\player_specific_data\{player_info[0]}_data.html', 'r', encoding='utf-8') as file:
             contents = file.read()
@@ -280,7 +305,7 @@ def get_player_season_stats(player_name_with_url_list: list, season_range: range
                         year_url = element.find('th').a['href']
             
                         # get html data from specific season
-                        page_contents = selenium_request(rf'{baseline_url}{year_url}')
+                        page_contents = selenium_request(firefox_driver=web_driver, request_url=rf'{baseline_url}{year_url}')
                         # Parse the HTML with BeautifulSoup
                         soup_2 = BeautifulSoup(page_contents, 'html.parser')
                         
@@ -340,7 +365,7 @@ def get_player_season_stats(player_name_with_url_list: list, season_range: range
                         # rename a handful of columns
                         season_df = season_df.rename(columns = {'Player\'s age on February 1 of the season':'Player Age', 'game_location': 'Game Location', 'game_result': 'Game Result'})
                         # fix date format for ease of comparison later
-                        season_df['Date'] = season_df['Date'].apply(lambda x: player_date_change(x))
+                        season_df['Date'] = season_df['Date'].apply(lambda x: date_change(date=x, is_player=True))
                         
                         # save to CSV, removing row indexes and keeping the headers
                         season_df.to_csv(rf'C:\Users\Michael\Code\Python\Data_scraping\player_csv\{season_year}_{player_info[0]}.csv', index=False, header=True)
@@ -350,9 +375,14 @@ def get_player_season_stats(player_name_with_url_list: list, season_range: range
                         print(rf"Game log data saved to {season_year}_{player_info[0]}.csv")
                 else:
                     print(rf'No player season data found for {player_info[0]} in {season_year}')
+    
+    # quit web driver
+    web_driver.quit()
             
 # used to find full game schedules for the years in the given range
 def full_games_schedule(start_year: int, end_year: int) -> DataFrame:
+    # web driver
+    web_driver = initialize_selenium_driver()
     # list containing all DataFrames with each season's data; contains data of form: [year, season_schedule_df]
     seasons_schedules_headers = ['Year', 'Season_schedule_df']
     all_seasons_schedules_dfs = pd.DataFrame(columns=seasons_schedules_headers)
@@ -361,7 +391,7 @@ def full_games_schedule(start_year: int, end_year: int) -> DataFrame:
     for year in range(start_year, (end_year + 1)):
             
         # save the html data for the page; corrects for difference in url and season start year
-        selenium_request(rf'https://www.basketball-reference.com/leagues/NBA_{(year + 1)}_games.html', True, rf'C:\Users\Michael\Code\Python\Data_scraping\season_schedule\{year}_schedule.html')
+        selenium_request(firefox_driver=web_driver, request_url=rf'https://www.basketball-reference.com/leagues/NBA_{(year + 1)}_games.html', save_html=True, file_path=rf'C:\Users\Michael\Code\Python\Data_scraping\season_schedule\{year}_schedule.html')
         
         # open file containing the HTML data (with error handles)
         with open(rf'C:\Users\Michael\Code\Python\Data_scraping\season_schedule\{year}_schedule.html', 'r', encoding='utf-8') as file:
@@ -388,7 +418,7 @@ def full_games_schedule(start_year: int, end_year: int) -> DataFrame:
             # base site url
             base_url = "https://www.basketball-reference.com"
             # obtains the html data for the given month of the season
-            season_month_data = selenium_request(rf'{base_url}{month['href']}')
+            season_month_data = selenium_request(firefox_driver=web_driver, request_url=rf'{base_url}{month['href']}')
             # make soup
             soup_2 = BeautifulSoup(season_month_data, 'html.parser')
             # find table with season data
@@ -433,7 +463,7 @@ def full_games_schedule(start_year: int, end_year: int) -> DataFrame:
         # full team names to their abbreviations in Away
         season_schedule_df['Away'] = season_schedule_df['Away'].apply(lambda x: full_to_abbreviation(x, year))
         # fix date format
-        season_schedule_df['Date'] = season_schedule_df['Date'].apply(lambda x: schedule_date_change(x))
+        season_schedule_df['Date'] = season_schedule_df['Date'].apply(lambda x: date_change(date=x, is_player=False))
 
         # temp list to make season DataFrame
         df_list = [[year, season_schedule_df]]
@@ -445,7 +475,9 @@ def full_games_schedule(start_year: int, end_year: int) -> DataFrame:
         season_schedule_df.to_csv(rf'C:\Users\Michael\Code\Python\Data_scraping\season_schedule\{year}_season_games.csv', index=False, header=True)
         
         print(rf"Season data saved to {year}_season_games.csv")
-        
+    
+    # quit web driver
+    web_driver.quit()    
     return all_seasons_schedules_dfs
 
 # takes in a list of season schedules; assumes you already have all necessary player data saved for access; this returns a russian doll of DataFrames

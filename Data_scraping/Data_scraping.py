@@ -22,7 +22,7 @@ if __name__ == "__main__":
     
     if section_to_run == 1:
         #returns large list containing smaller lists of 2 elements
-        player_list = scrape.find_players_by_year('a', 'b', 1980, 1982)
+        player_list = scrape.find_players_by_year('a', 'b', 1980, 1985)
         
     elif section_to_run == 2:
         #returns large list containing smaller lists of 2 elements
