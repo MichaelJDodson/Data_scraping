@@ -38,6 +38,9 @@ if __name__ == "__main__":
 
     elif section_to_run == 3:
         season_schedule = scrape.full_games_schedule(1980,1980)
+    
+    elif section_to_run == 4:
+        scrape.get_html(rf'https://www.basketball-reference.com/players/a/aingeda01/gamelog/1982/', rf'C:\Users\Michael\Code\Python\Data_scraping\test_folder\test_data.html')
         
     else:
         print('No section of code could run')

@@ -7,6 +7,9 @@ import random
 
 # third party library
 import requests
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.firefox.options import Options
 from bs4 import BeautifulSoup
 import pandas as pd
 from pandas import DataFrame
@@ -14,40 +17,36 @@ import pickle
 
 # contains all the functions necessary for Data_scraping on https://www.basketball-reference.com
 
-# handles http GET requests and returns the page contents as bytes to "make soup"
-def get_response_data(url: str) -> bytes:
-    # ensure requests are not made too frequent
-    time.sleep(10)
-    # pass to dynamic delay just in case
-    response = http_request_dynamic_delay(url)
-    if response.status_code == 200:
-        # to deal with non-breaking spaces in conversion of HTML and ensure UTF-8 encoding
-        response.encoding = 'utf-8'
-        return response.content
-    else:
-        print("Failed to retrieve the page. Status code:", response.status_code)
-
-# pass a url and file save path to save all html data to a file
-def get_html(url: str, path: str):
-    # ensure requests are not made too frequent
-    time.sleep(10)
-    # pass to dynamic delay just in case
-    response = http_request_dynamic_delay(url)
-    if response.status_code == 200:
-        # open the file path and write the contents into the file (with error handles)
-        with open(path, 'w', encoding='utf-8') as file:
-            file.write(response.text)
-    else: 
-        print("Failed to retrieve the page. Status code:", response.status_code)
-
-# dynamically changes the time between server requests in the event of server rate limiting issues
-def http_request_dynamic_delay(request_url: str):
+# used selenium to load page for given url for dynamic html scraping; if saving the html data from a page it does not return a string
+def selenium_request(request_url: str, save_html: bool = False, file_path: str = None) -> str:
+    
+    # set up Firefox in headless mode
+    options = Options()
+    # run without GUI, doesn't visually open firefox
+    options.add_argument('--headless')
+    driver = webdriver.Firefox(options=options)
+    
     # retry count default
     retry = 10
+    # dynamically changes the time between server requests in the event of server rate limiting issues
     for attempt in range(retry):
         try:
-            response = requests.get(request_url)
-            return response
+            # open the URL
+            driver.get(request_url)
+            # get the page source
+            html_source = driver.page_source
+            
+            # allow time for JavaScript to load (adjust as needed)
+            time.sleep(3)
+            
+            # if saving html data
+            if save_html and file_path:
+                # open the file path and write the contents into the file (with error handles)
+                with open(file_path, 'w', encoding='utf-8') as file:
+                    file.write(html_source.text)
+            elif not save_html:
+                return html_source
+        # runs in the event of an exception
         except requests.exceptions.RequestException as e:
             wait = 2 ** attempt + random.uniform(0, 1)
             print(e)
@@ -141,7 +140,7 @@ def find_players(start_letter: str, end_letter: str):
         # concatenate each letter to make the new url's to browse through all players
         new_url = rf"{all_players_url}{letter}"
         # pass the url information to save the html data
-        get_html(new_url, rf'C:\Users\Michael\Code\Python\Data_scraping\alphabetic_players_grouped\letter_{letter}_data.html')
+        selenium_request(new_url, True, rf'C:\Users\Michael\Code\Python\Data_scraping\alphabetic_players_grouped\letter_{letter}_data.html')
 
 # find players based on the seasons that they have played, pulling from html data already saved using the find_players function
 def find_players_by_year(start_letter: str, end_letter: str, start_year: int, end_year: int) -> list :
@@ -181,7 +180,7 @@ def get_player_metrics(player_name_with_url: list) -> DataFrame:
     baseline_url = "https://www.basketball-reference.com"
      
     # pass the full url after appending to the end of the baseline url from list
-    page_data = get_response_data(rf'{baseline_url}{player_name_with_url[1]}')
+    page_data = selenium_request(rf'{baseline_url}{player_name_with_url[1]}')
     # make the soup
     soup = BeautifulSoup(page_data, 'html.parser')
     
@@ -233,121 +232,124 @@ def get_player_metrics(player_name_with_url: list) -> DataFrame:
     return player_metrics_df
 
 # retrieve the player season statistics for all games in a given range of seasons using a list containing [player name, url to their stats]
-def get_player_season_stats(player_name_with_url: list, season_range: range):
+def get_player_season_stats(player_name_with_url_list: list, season_range: range):
     # make list from year range
     season_list = list(season_range)
-    # base url
-    baseline_url = "https://www.basketball-reference.com"
-    # pass the full url after appending to the end of the baseline url from list, along with file save location
-    get_html(rf'{baseline_url}{player_name_with_url[1]}', rf'C:\Users\Michael\Code\Python\Data_scraping\player_specific_data\{player_name_with_url[0]}_data.html')
-    # open file containing the HTML data (with error handles)
-    with open(rf'C:\Users\Michael\Code\Python\Data_scraping\player_specific_data\{player_name_with_url[0]}_data.html', 'r', encoding='utf-8') as file:
-        contents = file.read()
-    # make the soup
-    soup_1 = BeautifulSoup(contents, "html.parser")
-    # find the table of all season stats
-    table_1 = soup_1.find('table', id='per_game_stats')
     
-    # iterate over year range
-    for season_year in season_list:
-        # used to ensure that a season is only saved once since some pages contain multiple lines for the same year, containing the same data
-        was_year_saved = False
+    # iterate over list of player info [ player name, player url]
+    for player_info in player_name_with_url_list:  
+        # base url
+        baseline_url = "https://www.basketball-reference.com"
+        # pass the full url after appending to the end of the baseline url from list, along with file save location
+        selenium_request(rf'{baseline_url}{player_info[1]}', True, rf'C:\Users\Michael\Code\Python\Data_scraping\player_specific_data\{player_info[0]}_data.html')
+        # open player html page
+        with open(rf'C:\Users\Michael\Code\Python\Data_scraping\player_specific_data\{player_info[0]}_data.html', 'r', encoding='utf-8') as file:
+            contents = file.read()
+        # make the soup
+        soup_1 = BeautifulSoup(contents, "html.parser")
+        # find the table of all season stats
+        table_1 = soup_1.find('table', id='per_game_stats')
         
-        for element in table_1.find('tbody').find_all('tr'):
-            # ends table loop looking for a given year if already found
-            if was_year_saved:
-                break
+        # iterate over year range
+        for season_year in season_list:
+            # used to ensure that a season is only saved once since some pages contain multiple lines for the same year, containing the same data
+            was_year_saved = False
             
-            # check to see if element ends up being NoneType / None. jumps to next for-loop iteration
-            search_headers = element.find('th')
-            if search_headers is None:
-                print(rf'No headers found for {player_name_with_url[0]} in {season_year}')
-                continue
-            search_hyperlink = search_headers.find('a')
-            if search_hyperlink is None:
-                print(rf'No year hyperlink data found for {player_name_with_url[0]} in {season_year}')
-                continue
+            for element in table_1.find('tbody').find_all('tr'):
+                # ends table loop looking for a given year if already found
+                if was_year_saved:
+                    break
+                
+                # check to see if element ends up being NoneType / None. jumps to next for-loop iteration
+                search_headers = element.find('th')
+                if search_headers is None:
+                    print(rf'No headers found for {player_info[0]} in {season_year}')
+                    continue
+                search_hyperlink = search_headers.find('a')
+                if search_hyperlink is None:
+                    print(rf'No year hyperlink data found for {player_info[0]} in {season_year}')
+                    continue
+                
+                # use re to collect the number for start year by removing the information after the hyphen
+                table_year = re.search(r'(\d+)-', element.find('th').find('a').get_text()).group(1)
             
-            # use re to collect the number for start year by removing the information after the hyphen
-            table_year = re.search(r'(\d+)-', element.find('th').find('a').get_text())
-        
-            if table_year:
-                # convert to int and compare to season_start_year and ensure that the year has not been saved yet
-                if int(table_year.group(1)) == season_year:
-                    # assigns the year_url from the href data if the year is correct
-                    year_url = element.find('th').a['href']
-        
-                    # get html data from specific season
-                    season_data = get_response_data(rf'{baseline_url}{year_url}')
-                    # make some more soup
-                    soup_2 = BeautifulSoup(season_data, "html.parser")
-                    
-                    # find the 'pgl_basic' table by its tag and ID
-                    table_2 = soup_2.find('table', id='pgl_basic')
-                    # find the 'pgl_basic_playoffs' table by its tag and ID
-                    table_3 = soup_2.find('table', id='pgl_basic_playoffs')
-                    
-                    # array for headers
-                    headers = []
-                    # array for row data
-                    rows = []
-                    
-                    # determines if the regular season table (table_2) exists in the html
-                    if table_2:
-                        # extract headers with improved handling for whitespace and non-breaking spaces
-                        for table_header in table_2.find('thead').find_all('th'):
-                            # remove whitespace
-                            header = table_header.get('data-tip', table_header.string.strip()).replace(u'\xa0', ' ').strip()
-                            # if header is still empty after stripping whitespace
-                            if not header:
-                                header = table_header.get('data-stat', 'Unknown Header')
-                                
-                            headers.append(header)
-                    
-                    # determines if the table exists in the html
-                    if table_2:
-                        # extract rows, skipping any repeated header rows and ensuring only valid data rows; records the games for the regular season
-                        for row in table_2.find_all('tr'):
-                            cells = [td.get_text().replace(u'\xa0', ' ') for td in row.find_all(['th', 'td'])]
-                            # Only add rows with the correct number of columns (matching the header count)
-                            if len(cells) == len(headers):
-                                rows.append(cells)
-                    
-                    
-                    # determines if the table exists in the html
-                    if table_3:
-                        # append the playoff games to the row data if the player made it to the playoffs that season    
-                        for row in table_3.find_all('tr'):
-                            cells = [td.get_text().replace(u'\xa0', ' ') for td in row.find_all(['th', 'td'])]
-                            # Only add rows with the correct number of columns (matching the header count)
-                            if len(cells) == len(headers):
-                                rows.append(cells)
-                    else:
-                        print(rf'no play-off data for {player_name_with_url[0]}')
-                    
-                    # headers are stored in a way that does not make them the first row in the DataFrame
-                    season_df = pd.DataFrame(rows, columns=headers)
-                    # drop duplicate data rows, if not already properly done in the row for loop
-                    season_df = season_df.drop_duplicates()
-                    # drop first column due to redundant data
-                    season_df = season_df.drop(season_df.columns[0], axis=1)
-                    # drops the first row of numbers imported and then resets the indexes
-                    season_df = season_df.drop(index=0).reset_index(drop=True)
-                    # change the default "@" in the location column
-                    season_df['game_location'] = season_df['game_location'].apply(lambda x: "Away" if x == "@" else "Home")
-                    # rename a handful of columns
-                    season_df = season_df.rename(columns = {'Player\'s age on February 1 of the season':'Player Age', 'game_location': 'Game Location', 'game_result': 'Game Result'})
-                    # fix date format for ease of comparison later
-                    season_df['Date'] = season_df['Date'].apply(lambda x: player_date_change(x))
-                    
-                    # save to CSV, removing row indexes and keeping the headers
-                    season_df.to_csv(rf'C:\Users\Michael\Code\Python\Data_scraping\player_csv\{season_year}_{player_name_with_url[0]}.csv', index=False, header=True)
-                    # updates to record that that year's season was saved
-                    was_year_saved = True
-                    
-                    print(rf"Game log data saved to {season_year}_{player_name_with_url[0]}.csv")
-            else:
-                print(rf'No player season data found for {player_name_with_url[0]} in {season_year}')
+                if table_year:
+                    # convert to int and compare to season_start_year and ensure that the year has not been saved yet
+                    if int(table_year) == season_year:
+                        # assigns the year_url from the href data if the year is correct
+                        year_url = element.find('th').a['href']
+            
+                        # get html data from specific season
+                        page_contents = selenium_request(rf'{baseline_url}{year_url}')
+                        # Parse the HTML with BeautifulSoup
+                        soup_2 = BeautifulSoup(page_contents, 'html.parser')
+                        
+                        # find the 'pgl_basic' table by its tag and ID
+                        table_2 = soup_2.find('table', id='pgl_basic')
+                        # find the 'pgl_basic_playoffs' table by its tag and ID
+                        table_3 = soup_2.find('table', id='pgl_basic_playoffs')
+                        
+                        # array for headers
+                        headers = []
+                        # array for row data
+                        rows = []
+                        
+                        # determines if the regular season table (table_2) exists in the html
+                        if table_2:
+                            # extract headers with improved handling for whitespace and non-breaking spaces
+                            for table_header in table_2.find('thead').find_all('th'):
+                                # remove whitespace
+                                header = table_header.get('data-tip', table_header.string.strip()).replace(u'\xa0', ' ').strip()
+                                # if header is still empty after stripping whitespace
+                                if not header:
+                                    header = table_header.get('data-stat', 'Unknown Header')
+                                    
+                                headers.append(header)
+                        
+                        # determines if the table exists in the html
+                        if table_2:
+                            # extract rows, skipping any repeated header rows and ensuring only valid data rows; records the games for the regular season
+                            for row in table_2.find_all('tr'):
+                                cells = [td.get_text().replace(u'\xa0', ' ') for td in row.find_all(['th', 'td'])]
+                                # Only add rows with the correct number of columns (matching the header count)
+                                if len(cells) == len(headers):
+                                    rows.append(cells)
+                        
+                        
+                        # determines if the table exists in the html
+                        if table_3:
+                            # append the playoff games to the row data if the player made it to the playoffs that season    
+                            for row in table_3.find_all('tr'):
+                                cells = [td.get_text().replace(u'\xa0', ' ') for td in row.find_all(['th', 'td'])]
+                                # Only add rows with the correct number of columns (matching the header count)
+                                if len(cells) == len(headers):
+                                    rows.append(cells)
+                        else:
+                            print(rf'no play-off data for {player_info[0]}')
+                        
+                        # headers are stored in a way that does not make them the first row in the DataFrame
+                        season_df = pd.DataFrame(rows, columns=headers)
+                        # drop duplicate data rows, if not already properly done in the row for loop
+                        season_df = season_df.drop_duplicates()
+                        # drop first column due to redundant data
+                        season_df = season_df.drop(season_df.columns[0], axis=1)
+                        # drops the first row of numbers imported and then resets the indexes
+                        season_df = season_df.drop(index=0).reset_index(drop=True)
+                        # change the default "@" in the location column
+                        season_df['game_location'] = season_df['game_location'].apply(lambda x: "Away" if x == "@" else "Home")
+                        # rename a handful of columns
+                        season_df = season_df.rename(columns = {'Player\'s age on February 1 of the season':'Player Age', 'game_location': 'Game Location', 'game_result': 'Game Result'})
+                        # fix date format for ease of comparison later
+                        season_df['Date'] = season_df['Date'].apply(lambda x: player_date_change(x))
+                        
+                        # save to CSV, removing row indexes and keeping the headers
+                        season_df.to_csv(rf'C:\Users\Michael\Code\Python\Data_scraping\player_csv\{season_year}_{player_info[0]}.csv', index=False, header=True)
+                        # updates to record that that year's season was saved
+                        was_year_saved = True
+                        
+                        print(rf"Game log data saved to {season_year}_{player_info[0]}.csv")
+                else:
+                    print(rf'No player season data found for {player_info[0]} in {season_year}')
             
 # used to find full game schedules for the years in the given range
 def full_games_schedule(start_year: int, end_year: int) -> DataFrame:
@@ -359,7 +361,7 @@ def full_games_schedule(start_year: int, end_year: int) -> DataFrame:
     for year in range(start_year, (end_year + 1)):
             
         # save the html data for the page; corrects for difference in url and season start year
-        get_html(rf'https://www.basketball-reference.com/leagues/NBA_{(year + 1)}_games.html', rf'C:\Users\Michael\Code\Python\Data_scraping\season_schedule\{year}_schedule.html')
+        selenium_request(rf'https://www.basketball-reference.com/leagues/NBA_{(year + 1)}_games.html', True, rf'C:\Users\Michael\Code\Python\Data_scraping\season_schedule\{year}_schedule.html')
         
         # open file containing the HTML data (with error handles)
         with open(rf'C:\Users\Michael\Code\Python\Data_scraping\season_schedule\{year}_schedule.html', 'r', encoding='utf-8') as file:
@@ -386,7 +388,7 @@ def full_games_schedule(start_year: int, end_year: int) -> DataFrame:
             # base site url
             base_url = "https://www.basketball-reference.com"
             # obtains the html data for the given month of the season
-            season_month_data = get_response_data(rf'{base_url}{month['href']}')
+            season_month_data = selenium_request(rf'{base_url}{month['href']}')
             # make soup
             soup_2 = BeautifulSoup(season_month_data, 'html.parser')
             # find table with season data
