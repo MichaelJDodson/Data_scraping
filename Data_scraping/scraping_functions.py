@@ -5,6 +5,7 @@ from pathlib import Path
 from datetime import datetime
 import random
 import os
+import csv
 
 # third party library
 from selenium.webdriver.firefox.service import Service
@@ -324,7 +325,7 @@ def get_player_season_stats(player_name_with_url_list: list, season_range: range
                             # extract headers with improved handling for whitespace and non-breaking spaces
                             for table_header in table_2.find('thead').find_all('th'):
                                 # remove whitespace
-                                header = table_header.get('data-tip', table_header.string.strip()).replace(u'\xa0', ' ').strip()
+                                header = table_header.get('data-tip', table_header.string.strip()).replace(u'\xa0', ' ').replace('"' , ' ' ).strip()
                                 # if header is still empty after stripping whitespace
                                 if not header:
                                     header = table_header.get('data-stat', 'Unknown Header')
@@ -335,7 +336,7 @@ def get_player_season_stats(player_name_with_url_list: list, season_range: range
                         if table_2:
                             # extract rows, skipping any repeated header rows and ensuring only valid data rows; records the games for the regular season
                             for row in table_2.find_all('tr'):
-                                cells = [td.get_text().replace(u'\xa0', ' ') for td in row.find_all(['th', 'td'])]
+                                cells = [td.get_text().replace(u'\xa0', ' ').replace('"' , ' ' ) for td in row.find_all(['th', 'td'])]
                                 # Only add rows with the correct number of columns (matching the header count)
                                 if len(cells) == len(headers):
                                     rows.append(cells)
@@ -345,7 +346,7 @@ def get_player_season_stats(player_name_with_url_list: list, season_range: range
                         if table_3:
                             # append the playoff games to the row data if the player made it to the playoffs that season    
                             for row in table_3.find_all('tr'):
-                                cells = [td.get_text().replace(u'\xa0', ' ') for td in row.find_all(['th', 'td'])]
+                                cells = [td.get_text().replace(u'\xa0', ' ').replace('"' , ' ' ) for td in row.find_all(['th', 'td'])]
                                 # Only add rows with the correct number of columns (matching the header count)
                                 if len(cells) == len(headers):
                                     rows.append(cells)
@@ -368,7 +369,7 @@ def get_player_season_stats(player_name_with_url_list: list, season_range: range
                         season_df['Date'] = season_df['Date'].apply(lambda x: date_change(date=x, is_player=True))
                         
                         # save to CSV, removing row indexes and keeping the headers
-                        season_df.to_csv(rf'C:\Users\Michael\Code\Python\Data_scraping\player_csv\{season_year}_{player_info[0]}.csv', index=False, header=True)
+                        season_df.to_csv(rf'C:\Users\Michael\Code\Python\Data_scraping\player_csv\{season_year}_{player_info[0]}.csv', index=False, header=True, quoting=csv.QUOTE_NONE)
                         # updates to record that that year's season was saved
                         was_year_saved = True
                         
@@ -433,7 +434,7 @@ def full_games_schedule(start_year: int, end_year: int) -> DataFrame:
                 # extract headers with improved handling for whitespace and non-breaking spaces
                 for table_header in table.find('thead').find_all('th'):
                     # remove whitespace
-                    header = table_header.get('data-tip', table_header.string.strip()).replace(u'\xa0', ' ').strip()
+                    header = table_header.get('data-tip', table_header.string.strip()).replace(u'\xa0', ' ').replace('"' , ' ' ).strip()
                     # if header is still empty after stripping whitespace
                     if not header:
                         header = table_header.get('data-stat', 'Unknown Header')
@@ -444,14 +445,19 @@ def full_games_schedule(start_year: int, end_year: int) -> DataFrame:
             
             # extract rows, skipping any repeated header rows and ensuring only valid data rows; records the games for the regular season
             for row in table.find('tbody').find_all('tr'):
-                cells = [td.get_text().replace(u'\xa0', ' ') for td in row.find_all(['th', 'td'])]
-                # Only add rows with the correct number of columns (matching the header count)
-                if len(cells) == len(headers):
-                    rows.append(cells)
+                # skip rows that have header information
+                if 'thead' in row.get('class', []):
+                    print('skipped a row')
+                    continue
+                else:
+                    cells = [td.get_text().replace(u'\xa0', ' ').replace('"' , ' ' ) for td in row.find_all(['th', 'td'])]
+                    # Only add rows with the correct number of columns (matching the header count)
+                    if len(cells) == len(headers):
+                        rows.append(cells)
             
         # make DataFrame for the given season schedule
         season_schedule_df = pd.DataFrame(rows, columns=headers)
-        # drop duplicate data rows, if not already properly done in the row for loop
+        # drop duplicate data rows, if not already properly done in the row for-loop
         season_schedule_df = season_schedule_df.drop_duplicates()
         # rename away/home headers along with the point columns to be easier to work with later
         season_schedule_df = season_schedule_df.rename(columns = {'Visitor/Neutral':'Away', 'Home/Neutral':'Home','Points':'Away Points', 'PTS':'Home Points'})

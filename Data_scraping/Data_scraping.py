@@ -18,7 +18,7 @@ import scraping_functions as scrape
 # if the script is being executed as a "main" program
 if __name__ == "__main__":
     # determine which portion of code to run
-    section_to_run = 2
+    section_to_run = 3
     
     if section_to_run == 1:
         #returns large list containing smaller lists of 2 elements
@@ -40,8 +40,8 @@ if __name__ == "__main__":
         season_schedule = scrape.full_games_schedule(1980,1980)
     
     elif section_to_run == 4:
-        scrape.get_html(rf'https://www.basketball-reference.com/players/a/aingeda01/gamelog/1982/', rf'C:\Users\Michael\Code\Python\Data_scraping\test_folder\test_data.html')
-        
+        #scrape.get_html(rf'https://www.basketball-reference.com/players/a/aingeda01/gamelog/1982/', rf'C:\Users\Michael\Code\Python\Data_scraping\test_folder\test_data.html')
+        print('brother')
     else:
         print('No section of code could run')
         
