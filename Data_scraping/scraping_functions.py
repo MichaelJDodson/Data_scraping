@@ -49,7 +49,7 @@ def selenium_request(firefox_driver: webdriver.Firefox, request_url: str, save_h
             
             # break the loop if successful
             break
-        
+        # exponential backoff
         except (WebDriverException, TimeoutException) as e:
             # handle Selenium-specific exceptions
             wait = 2 ** attempt + random.uniform(0, 1)
@@ -65,7 +65,7 @@ def initialize_selenium_driver() -> webdriver.Firefox:
     options.add_argument('--disable-gpu')
     
     # use a specific version of GeckoDriver (manually installed)
-    gecko_path = rf'C:\Users\Michael\geckodriver-v0.35.0-win64\geckodriver.exe'
+    gecko_path = rf'C:\Users\Michael\gecko driver-v0.35.0-win64\geckodriver.exe'
     if not os.path.exists(gecko_path):
         raise FileNotFoundError(f"GeckoDriver not found at {gecko_path}. Please download it manually.")
 
@@ -487,79 +487,89 @@ def full_games_schedule(start_year: int, end_year: int) -> DataFrame:
     return all_seasons_schedules_dfs
 
 # takes in a list of season schedules; assumes you already have all necessary player data saved for access; this returns a russian doll of DataFrames
-def collect_players_in_game(season_game_schedules_df: DataFrame) -> DataFrame:
-    
-    # make headers for aggregate of all games
-    aggregate_headers = ['Season_start_year', 'Season_game_data']
+def collect_players_in_game(year_range: range) -> DataFrame:
+    # convert range to list to iterate over
+    year_list = list(year_range)
 
-    # contains all_game_info for every single game across the seasons input
+    # make headers for aggregate of all games
+    aggregate_headers = ['Season year', 'Season game data']
+    # contains the all_game_info_df for every single game across all seasons in the given year_range
     aggregate_of_all_game_info_df = pd.DataFrame(columns=aggregate_headers)
     
     # *** create all the portions of the DataFrame for a given season before opening any player files so that each player file for a given season only ends up having to be opened once
     
-    # iterate over the list of season schedules; season_data has the form: [year, season_schedule_df]
-    for season_data in season_game_schedules_df:
-        # get the index of the row that the given date is on for comparing other row data
-        row_index_1 = season_game_schedules_df.index[season_game_schedules_df['Year'] == season_data][0]
-        # season_year is recorded for later use in iterating over file names **keep**
-        season_year_1 = season_data[0]
-        # add the year the season started in
-        aggregate_of_all_game_info_df.loc[row_index_1, 'Season_start_year'] = season_year_1
+    # iterate over year range
+    for schedule_year in year_list:
+        
+        # open csv file for a season schedule
+        with open(rf'C:\Users\Michael\Code\Python\Data_scraping\season_schedule\{schedule_year}_season_games.csv', 'r', encoding='utf-8') as file:
+            csv_contents = file.read()
+        
+        # DataFrame for information for the given season year
+        season_game_schedule_df = pd.DataFrame(csv_contents, 'html.parser')
 
-        # iterate over the dates of all the games in a given season
-        for schedule_date in season_data[1]['Date']:
+        # has the form: [[[game date],[home_team_name, home_team_score, team_win as boolean, [players'_game_stats]], [away_team_name, away_team_score, team_win as boolean, [players'_game_stats]]], ...]
+        # Home_team_stats and Away_team_stats will be added to via later for-loop (scroll down)
+        all_game_headers = ['Game date', 'Home team stats', 'Away team stats']
+        all_game_info_df = pd.DataFrame(columns=all_game_headers)
 
-            # get the index of the row that the given date is on for comparing other row data
-            row_index_2 = season_data[1].index[season_data[1]['Date'] == schedule_date][0]
-
-            # initialize DataFrame that will contain all data for a singular game
-            # has the form: [[[game date],[home_team_name, home_team_score, team_win as boolean, [players'_game_stats]], [away_team_name, away_team_score, team_win as boolean, [players'_game_stats]]], ...]
-            # Home_team_stats and Away_team_stats will be added to via for loop later in this method (scroll down)
-            all_game_headers = ['Game_date', 'Home_team_stats', 'Away_team_stats']
-            all_game_info_df = pd.DataFrame(columns=all_game_headers)
-
-            # add game date
-            all_game_info_df.loc[row_index_2, 'Game_date', ] = schedule_date
+        # iterate over game dates in season_game_schedule_df to initialize DataFrames; headers of game_from_schedule: [Date, Home, Home points, Away, Away points, Attendance, Arena]
+        for game_from_schedule in season_game_schedule_df.itertuples():
 
             # collect team stats in DataFrames
-            team_headers = ['Team', 'Score', 'Team_win', 'Players_game_stats' ]
+            team_headers = ['Team', 'Score', 'Team win', 'Players game stats']
             home_team_aggregate_df = pd.DataFrame(columns=team_headers)
             away_team_aggregate_df = pd.DataFrame(columns=team_headers)
 
             # all pertinent information for comparing teams for each game instance
             # add home team name
-            home_team_aggregate_df.loc[0,'Team'] = season_data[1]['Home'][row_index_2]
+            home_team_aggregate_df.loc[0,'Team'] = game_from_schedule['Home']
             # add home team score
-            home_team_score = season_data[1]['Home_points'][row_index_2]
+            home_team_score = game_from_schedule['Home score']
             home_team_aggregate_df.loc[0,'Score'] = home_team_score
             # add away team name
-            away_team_aggregate_df.loc[0, 'Team'] = season_data[1]['Away'][row_index_2]
+            away_team_aggregate_df.loc[0, 'Team'] = game_from_schedule['Away']
             # add away team score
-            away_team_score = season_data[1]['Away_points'][row_index_2]
+            away_team_score = game_from_schedule['Away score']
             away_team_aggregate_df.loc[0, 'Score'] = away_team_score
-            
             # determine which team won and set the booleans accordingly, then add info to the appropriate DataFrames
             if home_team_score > away_team_score:
-                home_team_aggregate_df.loc[0,'Team_win'] = True
-                away_team_aggregate_df.loc[0,'Team_win'] = False
+                home_team_aggregate_df.loc[0,'Team win'] = True
+                away_team_aggregate_df.loc[0,'Team win'] = False
             else:
-                home_team_aggregate_df.loc[0,'Team_win'] = False
-                away_team_aggregate_df.loc[0,'Team_win'] = True
+                home_team_aggregate_df.loc[0,'Team win'] = False
+                away_team_aggregate_df.loc[0,'Team win'] = True
+            
+            # df to concatenate
+            temp_game_df = pd.DataFrame(columns=all_game_headers)
+            # add game data to temp df
+            temp_game_df.loc[0, 'Game date'] = game_from_schedule['Date']
+            temp_game_df.loc[0, 'Home team stats'] = home_team_aggregate_df
+            temp_game_df.loc[0, 'Away team stats'] = away_team_aggregate_df
 
-            # appends to aggregate_of_all_game_info_df
-            aggregate_of_all_game_info_df.loc[row_index_1, 'Season_game_data' ] = all_game_info_df
+            # concatenate to combine the new game for a given season onto the collection of all games for that season
+            pd.concat([all_game_info_df, temp_game_df])
 
+        # df to concatenate
+        temp_season_df = pd.DataFrame(columns=aggregate_headers)
+        temp_season_df[0, 'Season year'] = schedule_year
+        temp_season_df[0, 'Season game data'] = all_game_info_df
 
-    # iterate back over the newly made DataFrame to fill in player data; aggregate_of_all_game_info_df has data of the form: ['Season_start_year', 'Season_game_data']
-    for season_year_data in aggregate_of_all_game_info_df:
+        # concatenate to combine the given season data to the list of all seasons
+        pd.concat(aggregate_of_all_game_info_df, temp_season_df)
+
+    # *** at this point all elements for the all_game_info_df have data except 'Players game stats'
+
+    # iterate back over the newly made DataFrame to fill in player data; aggregate_of_all_game_info_df has data of the form: ['Season year', 'Season game data']
+    for season_year_data in aggregate_of_all_game_info_df.itertuples:
         # get the season_year for use in file search
-        season_year_2 = season_year_data[0]
+        season_year = season_year_data[0]
         # directory to search using pathlib library
         folder_path = Path(rf'C:\Users\Michael\Code\Python\Data_scraping\player_csv')
         # iterate through files in the folder
         for file in folder_path.iterdir():
             # checks to see if the file name has the year the season started in
-            if file.is_file() and season_year_2 in file.name:
+            if file.is_file() and season_year in file.name:
                 # opens the player file that has data for a given season and places it in a DataFrame
                 player_csv_df = pd.read_csv(file)
                 
