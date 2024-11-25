@@ -18,30 +18,33 @@ import scraping_functions as scrape
 # if the script is being executed as a "main" program
 if __name__ == "__main__":
     # determine which portion of code to run
-    section_to_run = 3
-    
+    section_to_run = 5
     if section_to_run == 1:
-        #returns large list containing smaller lists of 2 elements
-        player_list = scrape.find_players_by_year('a', 'b', 1980, 1985)
+        scrape.find_players('a', 'z')
         
     elif section_to_run == 2:
         #returns large list containing smaller lists of 2 elements
-        player_list = scrape.find_players_by_year('a', 'b', 1980, 1982)
+        player_list = scrape.find_players_by_year('a', 'z', 1980, 1981)
+        
+    elif section_to_run == 3:
+        #returns large list containing smaller lists of 2 elements
+        player_list = scrape.find_players_by_year('a', 'z', 1980, 1981)
 
-        # initializes the list to store the data frames with the player metrics [[player_metrics, [season_1, season_1_data], [season_2, season_2_data], ...], [player_metrics_2, [...], ...]
-        player_data_frames = []
         year_range = range(1980, 1981)
         scrape.get_player_season_stats(player_list, year_range)
         
         # get the player-specific metrics
         #player_metrics = scrape.get_player_metrics(player)
 
-    elif section_to_run == 3:
-        season_schedule = scrape.full_games_schedule(1980,1980)
-    
     elif section_to_run == 4:
-        #scrape.get_html(rf'https://www.basketball-reference.com/players/a/aingeda01/gamelog/1982/', rf'C:\Users\Michael\Code\Python\Data_scraping\test_folder\test_data.html')
-        print('brother')
+        season_schedule = scrape.full_games_schedule(1980,2024)
+    
+    elif section_to_run == 5:
+        set_range = range(1980,1980)
+        game_data_df = scrape.collect_players_in_game(set_range)
+        
+        # pickle the data for later use
+    
     else:
         print('No section of code could run')
         
