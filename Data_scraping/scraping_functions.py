@@ -84,7 +84,7 @@ def initialize_selenium_driver() -> webdriver.Firefox:
     return driver
 
 
-# utilize the pickle library to save the contents of a list or other data structure for later use
+# utilize the pickle library to save the contents of a list or other data structure for later use (*not for DataFrames)
 def pickle_data(data_for_later, file_name: str):
     with open(
         rf"C:\Users\Michael\Code\Python\Data_scraping\pickled_data\{file_name}.pkl",
@@ -711,6 +711,7 @@ def collect_players_in_game(year_range: range) -> pd.DataFrame:
         season_year = season_year_data.Season_year
         folder_path = Path("C:/Users/Michael/Code/Python/Data_scraping/player_csv")
 
+        # finds all files that contain the wildcard *TEXT*.csv and iterates over them
         for file in folder_path.glob(f"*{season_year}*.csv"):
             player_csv_df = pd.read_csv(file)
 
@@ -759,11 +760,9 @@ def collect_players_in_game(year_range: range) -> pd.DataFrame:
                             # runs if the DataFrame is empty
                             if players_game_stats_home_location_check:
                                 # takes the same headers as what are in player_csv_df
-                                list_series_headers = player_csv_df.columns
                                 # add the relevant player stats along with the headers
                                 temp_player_df = pd.DataFrame(
-                                    player_csv_df.loc[player_game_data.Index],
-                                    list_series_headers,
+                                    [player_csv_df.loc[player_game_data.Index]]
                                 )
                                 # write over the empty DataFrame
                                 # sometimes .at is necessary in place of .loc
@@ -776,15 +775,18 @@ def collect_players_in_game(year_range: range) -> pd.DataFrame:
                             # runs if the DataFrame has player information already
                             elif not players_game_stats_home_location_check:
                                 # takes the same headers as what are in player_csv_df
-                                list_series_headers = player_csv_df.columns
                                 # add the relevant player stats along with the headers
                                 temp_player_df = pd.DataFrame(
-                                    player_csv_df.loc[player_game_data.Index],
-                                    list_series_headers,
+                                    [player_csv_df.loc[player_game_data.Index]]
                                 )
 
                                 # concatenate with the DataFrame already there
-                                pd.concat(
+                                aggregate_of_all_game_info_df.at[
+                                    season_year_data.Index,
+                                    "Season_game_data",
+                                ].at[game_data.Index, "Home_team_stats"].at[
+                                    "Players_game_stats"
+                                ] = pd.concat(
                                     [
                                         aggregate_of_all_game_info_df.loc[
                                             season_year_data.Index,
@@ -794,6 +796,7 @@ def collect_players_in_game(year_range: range) -> pd.DataFrame:
                                         .loc["Players_game_stats"],
                                         temp_player_df,
                                     ],
+                                    ignore_index=True,
                                 )
 
                         # away team
@@ -814,7 +817,7 @@ def collect_players_in_game(year_range: range) -> pd.DataFrame:
                             print("AWAY DATAFRAME ASSERTION TRUE")
 
                             # stores a boolean for if there is an empty DataFrame within Players_game_stats for the away team
-                            players_game_stats_home_location_check = (
+                            players_game_stats_away_location_check = (
                                 aggregate_of_all_game_info_df.loc[
                                     season_year_data.Index,
                                     "Season_game_data",
@@ -825,13 +828,11 @@ def collect_players_in_game(year_range: range) -> pd.DataFrame:
                             )
 
                             # runs if the DataFrame is empty
-                            if players_game_stats_home_location_check:
+                            if players_game_stats_away_location_check:
                                 # takes the same headers as what are in player_csv_df
-                                list_series_headers = player_csv_df.columns
                                 # add the relevant player stats along with the headers
                                 temp_player_df = pd.DataFrame(
-                                    player_csv_df.loc[player_game_data.Index],
-                                    list_series_headers,
+                                    [player_csv_df.loc[player_game_data.Index]]
                                 )
                                 # write over the empty DataFrame
                                 # sometimes .at is necessary in place of .loc
@@ -842,17 +843,20 @@ def collect_players_in_game(year_range: range) -> pd.DataFrame:
                                     "Players_game_stats"
                                 ] = temp_player_df
                             # runs if the DataFrame has player information already
-                            elif not players_game_stats_home_location_check:
+                            elif not players_game_stats_away_location_check:
                                 # takes the same headers as what are in player_csv_df
-                                list_series_headers = player_csv_df.columns
                                 # add the relevant player stats along with the headers
                                 temp_player_df = pd.DataFrame(
-                                    player_csv_df.loc[player_game_data.Index],
-                                    list_series_headers,
+                                    [player_csv_df.loc[player_game_data.Index]]
                                 )
 
                                 # concatenate with the DataFrame already there
-                                pd.concat(
+                                aggregate_of_all_game_info_df.at[
+                                    season_year_data.Index,
+                                    "Season_game_data",
+                                ].at[game_data.Index, "Away_team_stats"].at[
+                                    "Players_game_stats"
+                                ] = pd.concat(
                                     [
                                         aggregate_of_all_game_info_df.loc[
                                             season_year_data.Index,
@@ -862,10 +866,28 @@ def collect_players_in_game(year_range: range) -> pd.DataFrame:
                                         .loc["Players_game_stats"],
                                         temp_player_df,
                                     ],
+                                    ignore_index=True,
                                 )
 
-    # pickle data for easy access later
-    pickle_data(aggregate_of_all_game_info_df, "All_seasons_game_data_df")
+    for season_year_data in aggregate_of_all_game_info_df.itertuples():
+        for game_data in season_year_data.Season_game_data.itertuples():
+            # error testing
+            print(
+                list(
+                    aggregate_of_all_game_info_df.loc[
+                        season_year_data.Index,
+                        "Season_game_data",
+                    ]
+                    .loc[game_data.Index, "Home_team_stats"]
+                    .loc["Players_game_stats"]
+                    .columns
+                )
+            )
+
+    # pickle data for easy access later using pandas method specifically to help maintain data types and structure
+    aggregate_of_all_game_info_df.to_pickle(
+        rf"C:\Users\Michael\Code\Python\Data_scraping\pickled_data\All_seasons_game_data_df.pkl"
+    )
 
     return aggregate_of_all_game_info_df
 
@@ -874,20 +896,16 @@ def collect_players_in_game(year_range: range) -> pd.DataFrame:
 def pickled_players_in_games_to_csv():
     pickled_file_path = rf"C:\Users\Michael\Code\Python\Data_scraping\pickled_data\All_seasons_game_data_df.pkl"
 
-    with open(pickled_file_path, "rb") as file:
-        data = pickle.load(file)
-    print(data)
-
-    # read the pickled data in
+    # read the pickled data into a DataFrame
     all_seasons_df = pd.read_pickle(pickled_file_path)
 
-    # the DataFrame has data of the layered form:
+    # the DataFrame has data of the nested form:
     # pickled_data Headers: ["Season_year", "Season_game_data"]
-    #       Season_year: int, Season_game_data: DataFrame
+    #       Season_year: int, Season_game_data: pd.DataFrame
     # Season_game_data Headers: ["Game_date", "Home_team_stats", "Away_team_stats"]
-    #       Game_date: str = DD/MM/YY, Home_team_stats: Series, Away_team_stats: Series
+    #       Game_date: str = DD/MM/YY, Home_team_stats: pd.Series, Away_team_stats: pd.Series
     # Home/Away _team_stats Headers/labels: ["Team", "Score", "Team_win", "Players_game_stats"]
-    #       Team: str, Score: int, Team_win: bool, Players_game_stats: DataFrame
+    #       Team: str, Score: int, Team_win: bool, Players_game_stats: pd.DataFrame
     # Players_game_stats Headers: *Same Headers as those found in {season_year}_{player_info[0]}.csv, for get_player_season_stats
 
     # iterate through season years
@@ -898,8 +916,22 @@ def pickled_players_in_games_to_csv():
             newline="",
         ) as file:
 
+            # lots of perceivably "extra" brackets[] in the following region. To future self: I assure you, they are not extra. Keep them if you want the csv to format properly.
+
             # iterate over the games in a given season
             for game_data in season_data.Season_game_data.itertuples():
+
+                # error testing
+                # print(
+                #    all_seasons_df.loc[
+                #        season_data.Index,
+                #        "Season_game_data",
+                #   ]
+                #    .loc[game_data.Index, "Home_team_stats"]
+                #   .loc["Players_game_stats"]
+                #    .columns
+                # )
+
                 # start writing into the csv file
                 writer = csv.writer(file)
 
@@ -921,48 +953,131 @@ def pickled_players_in_games_to_csv():
                 # blank line
                 writer.writerow([])
 
+                # .get_loc gives the integer location for a label/index, while .loc[] allows you to directly access the data at that point
+
                 # home team stats
 
                 # team name
                 writer.writerow(
                     [
-                        game_data.Home_team_stats.columns[
-                            game_data.Home_team_stats.columns.get_loc("Team")
+                        list(game_data.Home_team_stats.index)[
+                            game_data.Home_team_stats.index.get_loc("Team")
                         ]
                     ]
                 )
-                writer.writerow(game_data.Home_team_stats.Team)
+                writer.writerow([game_data.Home_team_stats.Team])
 
                 # team score
                 writer.writerow(
                     [
-                        game_data.Home_team_stats.columns[
-                            game_data.Home_team_stats.columns.get_loc("Score")
+                        list(game_data.Home_team_stats.index)[
+                            game_data.Home_team_stats.index.get_loc("Score")
                         ]
                     ]
                 )
-                writer.writerow(game_data.Home_team_stats.Score)
+                writer.writerow([game_data.Home_team_stats.Score])
 
                 # team_win
                 writer.writerow(
                     [
-                        game_data.Home_team_stats.columns[
-                            game_data.Home_team_stats.columns.get_loc("Team_win")
+                        list(game_data.Home_team_stats.index)[
+                            game_data.Home_team_stats.index.get_loc("Team_win")
                         ]
                     ]
                 )
-                writer.writerow(game_data.Home_team_stats.Team_win)
+                writer.writerow([game_data.Home_team_stats.Team_win])
 
                 # take note that upon serialization and deserialization (pickling), nested structures (DataFrames) can lose their original type fidelity when accessed via itertuples().
 
-                print(type(game_data.Home_team_stats.Players_game_stats))
-                print(game_data.Home_team_stats.Players_game_stats)
+                # print(type(game_data.Home_team_stats.Players_game_stats))
+                # print(game_data.Home_team_stats.Players_game_stats)
 
                 # team player stats
-                for row_data in game_data.Home_team_stats.Players_game_stats:
-                    writer.writerow(row_data)
+
+                # write the headers
+                writer.writerows(
+                    [
+                        all_seasons_df.loc[
+                            season_data.Index,
+                            "Season_game_data",
+                        ]
+                        .loc[game_data.Index, "Home_team_stats"]
+                        .loc["Players_game_stats"]
+                        .columns
+                    ]
+                )
+
+                # write the table data (.values returns an array of the table data)
+                writer.writerows(
+                    all_seasons_df.loc[
+                        season_data.Index,
+                        "Season_game_data",
+                    ]
+                    .loc[game_data.Index, "Home_team_stats"]
+                    .loc["Players_game_stats"]
+                    .values
+                )
 
                 # blank line
                 writer.writerow([])
 
                 # away team stats
+
+                # team name
+                writer.writerow(
+                    [
+                        list(game_data.Away_team_stats.index)[
+                            game_data.Away_team_stats.index.get_loc("Team")
+                        ]
+                    ]
+                )
+                writer.writerow([game_data.Away_team_stats.Team])
+
+                # team score
+                writer.writerow(
+                    [
+                        list(game_data.Away_team_stats.index)[
+                            game_data.Away_team_stats.index.get_loc("Score")
+                        ]
+                    ]
+                )
+                writer.writerow([game_data.Away_team_stats.Score])
+
+                # team_win
+                writer.writerow(
+                    [
+                        list(game_data.Away_team_stats.index)[
+                            game_data.Away_team_stats.index.get_loc("Team_win")
+                        ]
+                    ]
+                )
+                writer.writerow([game_data.Away_team_stats.Team_win])
+
+                # team player stats
+
+                # write the headers
+                writer.writerows(
+                    [
+                        all_seasons_df.loc[
+                            season_data.Index,
+                            "Season_game_data",
+                        ]
+                        .loc[game_data.Index, "Away_team_stats"]
+                        .loc["Players_game_stats"]
+                        .columns
+                    ]
+                )
+
+                # write the table data (.values returns an array of the table data)
+                writer.writerows(
+                    all_seasons_df.loc[
+                        season_data.Index,
+                        "Season_game_data",
+                    ]
+                    .loc[game_data.Index, "Away_team_stats"]
+                    .loc["Players_game_stats"]
+                    .values
+                )
+
+                # blank line
+                writer.writerow([])

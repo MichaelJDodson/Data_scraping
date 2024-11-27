@@ -15,7 +15,7 @@ import scraping_functions as scrape
 # if the script is being executed as a "main" program
 if __name__ == "__main__":
     # determine which portion of code to run
-    section_to_run = 5
+    section_to_run = 6
     if section_to_run == 1:
         scrape.find_players("a", "z")
 
