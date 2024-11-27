@@ -1,12 +1,9 @@
-# standard library
 import re
 import sys
 import time
 
 import pandas as pd
 import requests
-
-# third party library
 from bs4 import BeautifulSoup
 
 # local library
@@ -30,6 +27,7 @@ if __name__ == "__main__":
         # returns large list containing smaller lists of 2 elements
         player_list = scrape.find_players_by_year("a", "z", 1980, 1981)
 
+        # range (inclusive, exclusive)
         year_range = range(1980, 1981)
         scrape.get_player_season_stats(player_list, year_range)
 
@@ -37,13 +35,17 @@ if __name__ == "__main__":
         # player_metrics = scrape.get_player_metrics(player)
 
     elif section_to_run == 4:
-        season_schedule = scrape.full_games_schedule(1980, 2024)
+        season_schedule = scrape.full_games_schedule(1980, 1981)
 
     elif section_to_run == 5:
-        set_range = range(1980, 1980)
+        # range (inclusive, exclusive)
+        set_range = range(1980, 1981)
         game_data_df = scrape.collect_players_in_game(set_range)
 
         # pickle the data for later use
+
+    elif section_to_run == 6:
+        scrape.pickled_players_in_games_to_csv()
 
     else:
         print("No section of code could run")

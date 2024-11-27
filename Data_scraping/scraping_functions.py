@@ -1,4 +1,3 @@
-# standard library
 import csv
 import os
 import pickle
@@ -15,8 +14,6 @@ from pandas import DataFrame
 from selenium import webdriver
 from selenium.common.exceptions import TimeoutException, WebDriverException
 from selenium.webdriver.firefox.options import Options
-
-# third party library
 from selenium.webdriver.firefox.service import Service
 
 # contains all the functions necessary for Data_scraping on https://www.basketball-reference.com
@@ -90,7 +87,8 @@ def initialize_selenium_driver() -> webdriver.Firefox:
 # utilize the pickle library to save the contents of a list or other data structure for later use
 def pickle_data(data_for_later, file_name: str):
     with open(
-        rf"C:\Users\Michael\Code\Python\Data_scraping\pickled_data\{file_name}", "wb"
+        rf"C:\Users\Michael\Code\Python\Data_scraping\pickled_data\{file_name}.pkl",
+        "wb",
     ) as file:
         pickle.dump(data_for_later, file)
 
@@ -654,6 +652,8 @@ def collect_players_in_game(year_range: range) -> pd.DataFrame:
     aggregate_headers = ["Season_year", "Season_game_data"]
     aggregate_of_all_game_info_df = pd.DataFrame(columns=aggregate_headers)
 
+    # *** capitalized "Index" matters for accessing it as a label in a named tuple created from .itertuples() method
+
     for schedule_year in year_list:
         # open season schedule
         schedule_path = Path(
@@ -666,32 +666,33 @@ def collect_players_in_game(year_range: range) -> pd.DataFrame:
 
         # initialize DataFrames
         for game_from_schedule in season_game_schedule_df.itertuples():
-            # Collect team stats
-            home_team_aggregate_df = pd.DataFrame(
+            # collect team stats
+
+            home_team_aggregate_series = pd.Series(
                 {
-                    "Team": [game_from_schedule.Home],
-                    "Score": [game_from_schedule.Home_points],
-                    "Team win": [
-                        game_from_schedule.Home_points > game_from_schedule.Away_points
-                    ],
+                    "Team": game_from_schedule.Home,
+                    "Score": game_from_schedule.Home_points,
+                    "Team_win": game_from_schedule.Home_points
+                    > game_from_schedule.Away_points,
+                    "Players_game_stats": pd.DataFrame(),
                 }
             )
-            away_team_aggregate_df = pd.DataFrame(
+            away_team_aggregate_series = pd.Series(
                 {
-                    "Team": [game_from_schedule.Away],
-                    "Score": [game_from_schedule.Away_points],
-                    "Team win": [
-                        game_from_schedule.Away_points > game_from_schedule.Home_points
-                    ],
+                    "Team": game_from_schedule.Away,
+                    "Score": game_from_schedule.Away_points,
+                    "Team_win": game_from_schedule.Away_points
+                    > game_from_schedule.Home_points,
+                    "Players_game_stats": pd.DataFrame(),
                 }
             )
 
             # add game data
             temp_game_df = pd.DataFrame(
                 {
-                    "Game date": [game_from_schedule.Date],
-                    "Home team stats": [home_team_aggregate_df],
-                    "Away team stats": [away_team_aggregate_df],
+                    "Game_date": [game_from_schedule.Date],
+                    "Home_team_stats": [home_team_aggregate_series],
+                    "Away_team_stats": [away_team_aggregate_series],
                 }
             )
             all_game_info_df = pd.concat(
@@ -699,7 +700,7 @@ def collect_players_in_game(year_range: range) -> pd.DataFrame:
             )
 
         temp_season_df = pd.DataFrame(
-            {"Season year": [schedule_year], "Season game data": [all_game_info_df]}
+            {"Season_year": [schedule_year], "Season_game_data": [all_game_info_df]}
         )
         aggregate_of_all_game_info_df = pd.concat(
             [aggregate_of_all_game_info_df, temp_season_df], ignore_index=True
@@ -713,24 +714,255 @@ def collect_players_in_game(year_range: range) -> pd.DataFrame:
         for file in folder_path.glob(f"*{season_year}*.csv"):
             player_csv_df = pd.read_csv(file)
 
+            # error checking
+            # print(type(player_csv_df))
+            # print(player_csv_df.head())
+
             for player_game_data in player_csv_df.itertuples():
                 for game_data in season_year_data.Season_game_data.itertuples():
                     if player_game_data.Date == game_data.Game_date:
-                        # Add player data to home or away team
-                        for team in ["Home team stats", "Away team stats"]:
-                            if player_game_data.Team == game_data[team].iloc[0]["Team"]:
-                                game_data[team].iloc[0]["Players game stats"] = (
-                                    pd.concat(
-                                        [
-                                            game_data[team]
-                                            .iloc[0]
-                                            .get("Players game stats", pd.DataFrame()),
-                                            pd.DataFrame([player_game_data._asdict()]),
-                                        ],
-                                        ignore_index=True,
-                                    )
+                        # print verification
+                        print("DATE MATCHED")
+
+                        # add player data to home or away team
+
+                        # home team
+                        if game_data.Home_team_stats["Team"] == player_game_data.Team:
+
+                            # navigating nested data is very irritating
+                            # checking for issues within home team
+                            assert isinstance(
+                                aggregate_of_all_game_info_df.loc[
+                                    season_year_data.Index,
+                                    "Season_game_data",
+                                ]
+                                .loc[game_data.Index, "Home_team_stats"]
+                                .loc["Players_game_stats"],
+                                pd.DataFrame,
+                            ), "Players_game_stats should be a DataFrame"
+                            # print verification
+                            print("HOME DATAFRAME ASSERTION TRUE")
+
+                            # *** capitalized "Index" matters for accessing it as a label in a named tuple created from .itertuples() method
+
+                            # stores a boolean for if there is an empty DataFrame within Players_game_stats for the home team
+                            players_game_stats_home_location_check = (
+                                aggregate_of_all_game_info_df.loc[
+                                    season_year_data.Index,
+                                    "Season_game_data",
+                                ]
+                                .loc[game_data.Index, "Home_team_stats"]
+                                .loc["Players_game_stats"]
+                                .empty
+                            )
+
+                            # runs if the DataFrame is empty
+                            if players_game_stats_home_location_check:
+                                # takes the same headers as what are in player_csv_df
+                                list_series_headers = player_csv_df.columns
+                                # add the relevant player stats along with the headers
+                                temp_player_df = pd.DataFrame(
+                                    player_csv_df.loc[player_game_data.Index],
+                                    list_series_headers,
+                                )
+                                # write over the empty DataFrame
+                                # sometimes .at is necessary in place of .loc
+                                aggregate_of_all_game_info_df.at[
+                                    season_year_data.Index,
+                                    "Season_game_data",
+                                ].at[game_data.Index, "Home_team_stats"].at[
+                                    "Players_game_stats"
+                                ] = temp_player_df
+                            # runs if the DataFrame has player information already
+                            elif not players_game_stats_home_location_check:
+                                # takes the same headers as what are in player_csv_df
+                                list_series_headers = player_csv_df.columns
+                                # add the relevant player stats along with the headers
+                                temp_player_df = pd.DataFrame(
+                                    player_csv_df.loc[player_game_data.Index],
+                                    list_series_headers,
                                 )
 
+                                # concatenate with the DataFrame already there
+                                pd.concat(
+                                    [
+                                        aggregate_of_all_game_info_df.loc[
+                                            season_year_data.Index,
+                                            "Season_game_data",
+                                        ]
+                                        .loc[game_data.Index, "Home_team_stats"]
+                                        .loc["Players_game_stats"],
+                                        temp_player_df,
+                                    ],
+                                )
+
+                        # away team
+                        if game_data.Away_team_stats["Team"] == player_game_data.Team:
+
+                            # navigating nested data is very irritating
+                            # checking for issues within home team
+                            assert isinstance(
+                                aggregate_of_all_game_info_df.loc[
+                                    season_year_data.Index,
+                                    "Season_game_data",
+                                ]
+                                .loc[game_data.Index, "Away_team_stats"]
+                                .loc["Players_game_stats"],
+                                pd.DataFrame,
+                            ), "Players_game_stats should be a DataFrame"
+                            # print verification
+                            print("AWAY DATAFRAME ASSERTION TRUE")
+
+                            # stores a boolean for if there is an empty DataFrame within Players_game_stats for the away team
+                            players_game_stats_home_location_check = (
+                                aggregate_of_all_game_info_df.loc[
+                                    season_year_data.Index,
+                                    "Season_game_data",
+                                ]
+                                .loc[game_data.Index, "Away_team_stats"]
+                                .loc["Players_game_stats"]
+                                .empty
+                            )
+
+                            # runs if the DataFrame is empty
+                            if players_game_stats_home_location_check:
+                                # takes the same headers as what are in player_csv_df
+                                list_series_headers = player_csv_df.columns
+                                # add the relevant player stats along with the headers
+                                temp_player_df = pd.DataFrame(
+                                    player_csv_df.loc[player_game_data.Index],
+                                    list_series_headers,
+                                )
+                                # write over the empty DataFrame
+                                # sometimes .at is necessary in place of .loc
+                                aggregate_of_all_game_info_df.at[
+                                    season_year_data.Index,
+                                    "Season_game_data",
+                                ].at[game_data.Index, "Away_team_stats"].at[
+                                    "Players_game_stats"
+                                ] = temp_player_df
+                            # runs if the DataFrame has player information already
+                            elif not players_game_stats_home_location_check:
+                                # takes the same headers as what are in player_csv_df
+                                list_series_headers = player_csv_df.columns
+                                # add the relevant player stats along with the headers
+                                temp_player_df = pd.DataFrame(
+                                    player_csv_df.loc[player_game_data.Index],
+                                    list_series_headers,
+                                )
+
+                                # concatenate with the DataFrame already there
+                                pd.concat(
+                                    [
+                                        aggregate_of_all_game_info_df.loc[
+                                            season_year_data.Index,
+                                            "Season_game_data",
+                                        ]
+                                        .loc[game_data.Index, "Away_team_stats"]
+                                        .loc["Players_game_stats"],
+                                        temp_player_df,
+                                    ],
+                                )
+
+    # pickle data for easy access later
     pickle_data(aggregate_of_all_game_info_df, "All_seasons_game_data_df")
 
     return aggregate_of_all_game_info_df
+
+
+# take pickled DataFrame specifically from collect_players_in_game and convert to a csv to for easy readability
+def pickled_players_in_games_to_csv():
+    pickled_file_path = rf"C:\Users\Michael\Code\Python\Data_scraping\pickled_data\All_seasons_game_data_df.pkl"
+
+    with open(pickled_file_path, "rb") as file:
+        data = pickle.load(file)
+    print(data)
+
+    # read the pickled data in
+    all_seasons_df = pd.read_pickle(pickled_file_path)
+
+    # the DataFrame has data of the layered form:
+    # pickled_data Headers: ["Season_year", "Season_game_data"]
+    #       Season_year: int, Season_game_data: DataFrame
+    # Season_game_data Headers: ["Game_date", "Home_team_stats", "Away_team_stats"]
+    #       Game_date: str = DD/MM/YY, Home_team_stats: Series, Away_team_stats: Series
+    # Home/Away _team_stats Headers/labels: ["Team", "Score", "Team_win", "Players_game_stats"]
+    #       Team: str, Score: int, Team_win: bool, Players_game_stats: DataFrame
+    # Players_game_stats Headers: *Same Headers as those found in {season_year}_{player_info[0]}.csv, for get_player_season_stats
+
+    # iterate through season years
+    for season_data in all_seasons_df.itertuples():
+        with open(
+            rf"C:\Users\Michael\Code\Python\Data_scraping\pickled_data\{season_data.Season_year}_season_compiled.csv",
+            "w",
+            newline="",
+        ) as file:
+
+            # iterate over the games in a given season
+            for game_data in season_data.Season_game_data.itertuples():
+                # start writing into the csv file
+                writer = csv.writer(file)
+
+                # write in the season_year
+                writer.writerow(
+                    [season_data._fields[season_data._fields.index("Season_year")]]
+                )
+                writer.writerow([season_data.Season_year])
+
+                # blank line
+                writer.writerow([])
+
+                # write in game date
+                writer.writerow(
+                    [game_data._fields[game_data._fields.index("Game_date")]]
+                )
+                writer.writerow([game_data.Game_date])
+
+                # blank line
+                writer.writerow([])
+
+                # home team stats
+
+                # team name
+                writer.writerow(
+                    [
+                        game_data.Home_team_stats.columns[
+                            game_data.Home_team_stats.columns.get_loc("Team")
+                        ]
+                    ]
+                )
+                writer.writerow(game_data.Home_team_stats.Team)
+
+                # team score
+                writer.writerow(
+                    [
+                        game_data.Home_team_stats.columns[
+                            game_data.Home_team_stats.columns.get_loc("Score")
+                        ]
+                    ]
+                )
+                writer.writerow(game_data.Home_team_stats.Score)
+
+                # team_win
+                writer.writerow(
+                    [
+                        game_data.Home_team_stats.columns[
+                            game_data.Home_team_stats.columns.get_loc("Team_win")
+                        ]
+                    ]
+                )
+                writer.writerow(game_data.Home_team_stats.Team_win)
+
+                # take note that upon serialization and deserialization (pickling), nested structures (DataFrames) can lose their original type fidelity when accessed via itertuples().
+
+                print(type(game_data.Home_team_stats.Players_game_stats))
+                print(game_data.Home_team_stats.Players_game_stats)
+
+                # team player stats
+                for row_data in game_data.Home_team_stats.Players_game_stats:
+                    writer.writerow(row_data)
+
+                # blank line
+                writer.writerow([])
+
+                # away team stats
