@@ -728,7 +728,10 @@ def collect_players_in_game(year_range: range) -> pd.DataFrame:
                         # add player data to home or away team
 
                         # home team
-                        if game_data.Home_team_stats["Team"] == player_game_data.Team:
+                        if (
+                            game_data.Home_team_stats["Team"].strip()
+                            == player_game_data.Team.strip()
+                        ):
 
                             # navigating nested data is very irritating
                             # checking for issues within home team
@@ -800,7 +803,10 @@ def collect_players_in_game(year_range: range) -> pd.DataFrame:
                                 )
 
                         # away team
-                        if game_data.Away_team_stats["Team"] == player_game_data.Team:
+                        if (
+                            game_data.Away_team_stats["Team"].strip()
+                            == player_game_data.Team.strip()
+                        ):
 
                             # navigating nested data is very irritating
                             # checking for issues within home team
@@ -869,20 +875,20 @@ def collect_players_in_game(year_range: range) -> pd.DataFrame:
                                     ignore_index=True,
                                 )
 
-    for season_year_data in aggregate_of_all_game_info_df.itertuples():
-        for game_data in season_year_data.Season_game_data.itertuples():
-            # error testing
-            print(
-                list(
-                    aggregate_of_all_game_info_df.loc[
-                        season_year_data.Index,
-                        "Season_game_data",
-                    ]
-                    .loc[game_data.Index, "Home_team_stats"]
-                    .loc["Players_game_stats"]
-                    .columns
-                )
-            )
+    # for season_year_data in aggregate_of_all_game_info_df.itertuples():
+    #    for game_data in season_year_data.Season_game_data.itertuples():
+    #        # error testing
+    #        print(
+    #            list(
+    #                aggregate_of_all_game_info_df.loc[
+    #                    season_year_data.Index,
+    #                    "Season_game_data",
+    #                ]
+    #                .loc[game_data.Index, "Home_team_stats"]
+    #                .loc["Players_game_stats"]
+    #                .columns
+    #            )
+    #        )
 
     # pickle data for easy access later using pandas method specifically to help maintain data types and structure
     aggregate_of_all_game_info_df.to_pickle(
@@ -1081,3 +1087,16 @@ def pickled_players_in_games_to_csv():
 
                 # blank line
                 writer.writerow([])
+
+                # error check
+                if (
+                    all_seasons_df.loc[
+                        season_data.Index,
+                        "Season_game_data",
+                    ]
+                    .loc[game_data.Index, "Away_team_stats"]
+                    .loc["Players_game_stats"]
+                    .empty
+                ):
+
+                    print("TEAM DATA MISSING!!")
