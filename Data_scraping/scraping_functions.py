@@ -247,8 +247,8 @@ def find_players_by_year(
     return player_names_with_url
 
 
-# retrieve the player metrics by passing the list containing the name and url of the player
-def get_player_metrics(player_name_with_url: list) -> DataFrame:
+# retrieve the player metrics by passing the list containing the name and url of the player [name, url]
+def get_player_metrics(player_name_with_url: list) -> pd.Series:
     # base url and web driver
     baseline_url = "https://www.basketball-reference.com"
     web_driver = initialize_selenium_driver()
@@ -315,15 +315,15 @@ def get_player_metrics(player_name_with_url: list) -> DataFrame:
         "College",
     ]
 
-    # create the DataFrame containing player info
-    player_metrics_df = pd.DataFrame([player_metrics], columns=player_metric_headers)
+    # create the Series containing player info
+    player_metrics_series = pd.Series(data=player_metrics, index=player_metric_headers)
 
     # quit driver
     web_driver.quit()
-    return player_metrics_df
+    return player_metrics_series
 
 
-# retrieve the player season statistics for all games in a given range of seasons using a list containing [player name, url to their stats]
+# retrieve the player season statistics for all games in a given range of seasons using a list containing [[player name, url to their stats], ...]
 def get_player_season_stats(player_name_with_url_list: list, season_range: range):
     # make list from year range
     season_list = list(season_range)
@@ -347,6 +347,9 @@ def get_player_season_stats(player_name_with_url_list: list, season_range: range
             encoding="utf-8",
         ) as file:
             contents = file.read()
+
+        # retrieve Series with player metrics to append, using player name/url
+        player_metrics_series = get_player_metrics(player_info)
         # make the soup
         soup_1 = BeautifulSoup(contents, "html.parser")
         # find the table of all season stats
@@ -398,13 +401,19 @@ def get_player_season_stats(player_name_with_url_list: list, season_range: range
                         # find the 'pgl_basic_playoffs' table by its tag and ID
                         table_3 = soup_2.find("table", id="pgl_basic_playoffs")
 
-                        # array for headers
+                        # list for headers
                         headers = []
-                        # array for row data
+                        # list for row data
                         rows = []
+
+                        # adds on the player metrics to the DataFrame (height, weight, etc...)
 
                         # determines if the regular season table (table_2) exists in the html
                         if table_2:
+                            # add player metric headers to list first
+                            for metric_headers in list(player_metrics_series.index):
+                                headers.append(metric_headers)
+
                             # extract headers with improved handling for whitespace and non-breaking spaces
                             for table_header in table_2.find("thead").find_all("th"):
                                 # remove whitespace
@@ -428,27 +437,45 @@ def get_player_season_stats(player_name_with_url_list: list, season_range: range
                         if table_2:
                             # extract rows, skipping any repeated header rows and ensuring only valid data rows; records the games for the regular season
                             for row in table_2.find_all("tr"):
+                                # add player metric data to each row (for ease of use later for player/game comparisons)
+                                metric_row_data = list(player_metrics_series.values)
+
                                 cells = [
                                     td.get_text().replace("\xa0", " ").replace('"', " ")
                                     for td in row.find_all(["th", "td"])
                                 ]
+
+                                # concatenate row lists with * operator
+                                metric_and_stats_row = [*metric_row_data, *cells]
+
                                 # Only add rows with the correct number of columns (matching the header count)
-                                if len(cells) == len(headers):
-                                    rows.append(cells)
+                                if len(metric_and_stats_row) == len(headers):
+                                    rows.append(metric_and_stats_row)
 
                         # determines if the table exists in the html
                         if table_3:
                             # append the playoff games to the row data if the player made it to the playoffs that season
                             for row in table_3.find_all("tr"):
+                                # add player metric data to each row (for ease of use later for player/game comparisons)
+                                metric_row_data = list(player_metrics_series.values)
+
                                 cells = [
                                     td.get_text().replace("\xa0", " ").replace('"', " ")
                                     for td in row.find_all(["th", "td"])
                                 ]
+
+                                # concatenate row lists with * operator
+                                metric_and_stats_row = [*metric_row_data, *cells]
+
                                 # Only add rows with the correct number of columns (matching the header count)
-                                if len(cells) == len(headers):
-                                    rows.append(cells)
+                                if len(metric_and_stats_row) == len(headers):
+                                    rows.append(metric_and_stats_row)
                         else:
                             print(rf"no play-off data for {player_info[0]}")
+
+                        # error testing
+                        # print(headers)
+                        # print(rows)
 
                         # headers are stored in a way that does not make them the first row in the DataFrame
                         season_df = pd.DataFrame(rows, columns=headers)
