@@ -304,7 +304,7 @@ def get_player_metrics(player_name_with_url: list) -> pd.Series:
     if college:
         player_metrics.append(college.group(1))
     else:
-        player_metrics.append("n/a")
+        player_metrics.append("No college")
 
     player_metric_headers = [
         "Name",
@@ -507,7 +507,6 @@ def get_player_season_stats(player_name_with_url_list: list, season_range: range
                             rf"C:\Users\Michael\Code\Python\Data_scraping\player_csv\{season_year}_{player_info[0]}.csv",
                             index=False,
                             header=True,
-                            quoting=csv.QUOTE_NONE,
                         )
                         # updates to record that that year's season was saved
                         was_year_saved = True
@@ -693,8 +692,8 @@ def collect_players_in_game(year_range: range) -> pd.DataFrame:
 
         # initialize DataFrames
         for game_from_schedule in season_game_schedule_df.itertuples():
-            # collect team stats
 
+            # collect team stats
             home_team_aggregate_series = pd.Series(
                 {
                     "Team": game_from_schedule.Home,
