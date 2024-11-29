@@ -304,7 +304,7 @@ def find_players(start_letter: str, end_letter: str):
     web_driver.quit()
 
 
-# find players based on the seasons that they have played, pulling from html data already saved using the find_players function
+# find players based on the seasons that they have played, pulling from html data already saved using the find_players function; returns a list of form: [[player name, player int label, player url], ...]
 def find_players_by_year(
     start_letter: str, end_letter: str, start_year: int, end_year: int
 ) -> list:
@@ -352,11 +352,13 @@ def find_players_by_year(
                     ]
                 )
 
+    labeled_players = player_label(player_names_with_url)
+
     # returns a list containing the player name with part of the url to navigate to their data page
-    return player_names_with_url
+    return labeled_players
 
 
-# retrieve the player metrics by passing the list containing the name and url of the player [name, url]
+# retrieve the player metrics by passing the list containing the name and url of the player [player name, player label, url]
 def get_player_metrics(player_name_with_url: list) -> pd.Series:
     # base url and web driver
     baseline_url = "https://www.basketball-reference.com"
@@ -384,19 +386,8 @@ def get_player_metrics(player_name_with_url: list) -> pd.Series:
     # normalize whitespace to a single space; split() breaks the string into words by whitespace; join() fuses them back together with only a single whitespace between each word
     single_line_output = " ".join(player_metric_string.split())
 
-    # array of strings containing player info, starting with their name
-    player_metrics = [player_name_with_url[0]]
-
-    # use re to collect the text between "Position:" and "Shoots:" to get player position
-    position = re.search(r"Position:\s*(.*?)\s*Shoots:", single_line_output)
-    if position:
-        # assigns the first instance this pattern is found within the given string
-        player_metrics.append(position.group(1))
-
-    # use re to collect the text immediately after "Shoots:" for player dominant shooting hand
-    shoots = re.search(r"Shoots:\s*(\w+)", single_line_output)
-    if shoots:
-        player_metrics.append(shoots.group(1))
+    # array of strings containing player info, starting with their name and label
+    player_metrics = [player_name_with_url[0], player_name_with_url[1]]
 
     # use re to collect the number for height
     height = re.search(r"(\d+)cm", single_line_output)
@@ -408,21 +399,11 @@ def get_player_metrics(player_name_with_url: list) -> pd.Series:
     if weight:
         player_metrics.append(float(weight.group(1)))
 
-    # use re to collect the text for college
-    college = re.search(r"College:\s*(.*?)\s*High School", single_line_output)
-    if college:
-        player_metrics.append(college.group(1))
-    else:
-        player_metrics.append("No college")
-
     player_metric_headers = [
         "Name",
         "Player_int_label",
-        "Position",
-        "Shoots",
         "Height",
         "Weight",
-        "College",
     ]
 
     # create the Series containing player info
