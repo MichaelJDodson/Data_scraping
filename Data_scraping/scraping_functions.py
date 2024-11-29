@@ -257,12 +257,21 @@ def reformat_win_loss_margin(game_result: str) -> float:
 
 
 # assigns all players a unique integer label for later model training; takes in the play name with url list of form: [[player name, player url], [player 2 name, player 2 url], ...]
-def player_label(player_name_url_list: str) -> list:
-    # output list of the form: [[player name, player int label], [player 2 name, player 2 int label], ...]
+def player_label(player_name_url_list: list) -> list:
+    # output list of the form: [[player name, player int label, player url], [player 2 name, player 2 int label, player 2 url], ...]
     labeled_player = []
 
-    for i, player_data in enumerate(player_name_url_list):
-        temp_list = [player_data[0], i]
+    # range to pull random numbers from; ~4800 NBA players ever; want to avoid simply assigning ascending numbers according to players in alphabetical order
+    start_int_range = 1
+    end_int_range = 10000
+    # create list of random integer pulling from the population within the range; no repeats
+    random_numbers = random.sample(
+        range(start_int_range, end_int_range + 1), len(player_name_url_list)
+    )
+
+    # assigns random int within the specified range to each player
+    for i, player_data in player_name_url_list:
+        temp_list = [player_data[0], random_numbers[i], player_data[1]]
         labeled_player.append(temp_list)
 
     # write to text file
@@ -427,7 +436,7 @@ def get_player_season_stats(player_name_with_url_list: list, season_range: range
         # pass the full url after appending to the end of the baseline url from list, along with file save location
         selenium_request(
             firefox_driver=web_driver,
-            request_url=rf"{baseline_url}{player_info[1]}",
+            request_url=rf"{baseline_url}{player_info[2]}",
             save_html=True,
             file_path=rf"C:\Users\Michael\Code\Python\Data_scraping\player_specific_data\{player_info[0]}_data.html",
         )
