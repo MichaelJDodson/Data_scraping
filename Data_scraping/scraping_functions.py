@@ -157,6 +157,35 @@ def full_to_abbreviation(full_name: str, year: int) -> str:
     return full_name
 
 
+# handles time conversion from hours:minutes:seconds to just a floating point for minutes
+def playtime_conversion(time_str: str) -> float:
+    # splits up time pieces and makes a list
+    time_str_parse = time_str.split(":")
+    # determine that number of parts given (most players only have minutes:seconds)
+    time_parts = len(time_str_parse)
+
+    # calculate time in minutes
+    match time_parts:
+        case 1:
+            time_obj = datetime.strptime(time_str, "%S")
+            total_minutes = float(time_obj.second) / 60.0
+            return total_minutes
+        case 2:
+            time_obj = datetime.strptime(time_str, "%M:%S")
+            total_minutes = float(time_obj.minute) + (float(time_obj.second) / 60.0)
+            return total_minutes
+        case 3:
+            time_obj = datetime.strptime(time_str, "%H:%M:%S")
+            total_minutes = (
+                (float(time_obj.hour) * 60.0)
+                + float(time_obj.minute)
+                + (float(time_obj.second) / 60.0)
+            )
+            return total_minutes
+        case _:
+            return
+
+
 # handles date conversion for date formats in schedule and player data
 def date_change(date: str, is_player: bool = False) -> str:
     # use datetime library for ensuring all dates are compared in the same form, see https://docs.python.org/3/library/datetime.html#format-codes
@@ -173,7 +202,87 @@ def date_change(date: str, is_player: bool = False) -> str:
     return new_date
 
 
-# pass alphabet range and year range for search for player metrics and statistics
+# reformats player age from format "Year-days", to years as a float
+def reformat_player_age(age_as_str: str) -> float:
+    player_year_search = re.search(r"(\d+)-", age_as_str)
+    if not player_year_search:
+        return
+
+    year = float(player_year_search.group(1))
+
+    player_day_search = re.search(r"-(\d+)", age_as_str)
+    if not player_day_search:
+        return
+
+    day = float(player_year_search.group(1))
+
+    year_length = 365.0
+
+    year_as_float = year + (day / year_length)
+
+    return year_as_float
+
+
+# reformats Win_loss_margin to be a floating point, and removes the W/L, which can be easily determined
+def reformat_win_loss_margin(game_result: str) -> float:
+    result_search = re.search(r"((\d+))", game_result)
+    if not result_search:
+        return
+
+    # get win/loss margin from result_search; of form +int or -int
+    win_loss_margin = result_search.group(1)
+
+    win_search = re.search(r"+", win_loss_margin)
+
+    if not win_search:
+
+        loss_search = re.search(r"-", win_loss_margin)
+
+        if not loss_search:
+            return
+
+        loss_data = re.search(r"-(\d+)", loss_search.group(1))
+
+        if not loss_data:
+            return
+
+        return float(loss_data.group(1))
+
+    win_data = re.search(r"+(\d+)", win_search.group(1))
+
+    if not win_data:
+        return
+
+    return float(win_data.group(1))
+
+
+# assigns all players a unique integer label for later model training; takes in the play name with url list of form: [[player name, player url], [player 2 name, player 2 url], ...]
+def player_label(player_name_url_list: str) -> list:
+    # output list of the form: [[player name, player int label], [player 2 name, player 2 int label], ...]
+    labeled_player = []
+
+    for i, player_data in enumerate(player_name_url_list):
+        temp_list = [player_data[0], i]
+        labeled_player.append(temp_list)
+
+    # write to text file
+    with open(
+        rf"C:\Users\Michael\Code\Python\Data_scraping\unique_player_labels\labeled_players.txt",
+        "w",
+    ) as file:
+        for line in labeled_player:
+            file.write(line)
+
+    # pickle data
+    pickle_data(
+        labeled_player,
+        rf"C:\Users\Michael\Code\Python\Data_scraping\unique_player_labels\labeled_players.pkl",
+    )
+
+    return labeled_player
+
+
+# pass alphabet range and year range and save the corresponding html for future player search
 def find_players(start_letter: str, end_letter: str):
     all_players_url = "https://www.basketball-reference.com/players/"
     web_driver = initialize_selenium_driver()
@@ -292,15 +401,15 @@ def get_player_metrics(player_name_with_url: list) -> pd.Series:
     # use re to collect the number for height
     height = re.search(r"(\d+)cm", single_line_output)
     if height:
-        player_metrics.append(height.group(1))
+        player_metrics.append(float(height.group(1)))
 
     # use re to collect the number for weight
     weight = re.search(r"(\d+)kg", single_line_output)
     if weight:
-        player_metrics.append(weight.group(1))
+        player_metrics.append(float(weight.group(1)))
 
     # use re to collect the text for college
-    college = re.search(r"College:\s*(\w+)", single_line_output)
+    college = re.search(r"College:\s*(.*?)\s*High School", single_line_output)
     if college:
         player_metrics.append(college.group(1))
     else:
@@ -308,6 +417,7 @@ def get_player_metrics(player_name_with_url: list) -> pd.Series:
 
     player_metric_headers = [
         "Name",
+        "Player_int_label",
         "Position",
         "Shoots",
         "Height",
@@ -481,25 +591,93 @@ def get_player_season_stats(player_name_with_url_list: list, season_range: range
                         season_df = pd.DataFrame(rows, columns=headers)
                         # drop duplicate data rows, if not already properly done in the row for loop
                         season_df = season_df.drop_duplicates()
-                        # drop first column due to redundant data
-                        season_df = season_df.drop(season_df.columns[0], axis=1)
                         # drops the first row of numbers imported and then resets the indexes
                         season_df = season_df.drop(index=0).reset_index(drop=True)
-                        # change the default "@" in the location column
-                        season_df["game_location"] = season_df["game_location"].apply(
-                            lambda x: "Away" if x == "@" else "Home"
-                        )
+                        # drop column with no useful data
+                        season_df = season_df.drop(columns={"Rank", "Season Game"})
                         # rename a handful of columns
                         season_df = season_df.rename(
                             columns={
                                 "Player's age on February 1 of the season": "Player_age",
                                 "game_location": "Game_location",
-                                "game_result": "Game_result",
+                                "game_result": "Win_loss_margin",
                             }
+                        )
+                        # change the default "@" in the location column
+                        season_df["Game_location"] = season_df["Game_location"].apply(
+                            lambda x: "Away" if x == "@" else "Home"
                         )
                         # fix date format for ease of comparison later
                         season_df["Date"] = season_df["Date"].apply(
                             lambda x: date_change(date=x, is_player=True)
+                        )
+                        # change game started from 0/1 to T/F boolean
+                        season_df["Games Started"] = season_df["Games Started"].apply(
+                            lambda x: True if int(x) == 1 else False
+                        )
+
+                        # *** change all numbers to floating points for later manipulation
+
+                        # reformat win/loss margin as float
+                        season_df["Win_loss_margin"] = season_df[
+                            "Win_loss_margin"
+                        ].apply(lambda x: reformat_win_loss_margin(x))
+                        # fix age format to a floating point
+                        season_df["Player_age"] = season_df["Player_age"].apply(
+                            lambda x: reformat_player_age(x)
+                        )
+                        # fix minutes played to a floating point
+                        season_df["Minutes Played"] = season_df["Minutes Played"].apply(
+                            lambda x: playtime_conversion(x)
+                        )
+
+                        # change several columns to floats all at once
+                        season_df[
+                            [
+                                "Field Goals",
+                                "Field Goal Attempts",
+                                "Field Goal Percentage",
+                                "3-Point Field Goals",
+                                "3-Point Field Goal Attempts",
+                                "3-Point Field Goal Percentage",
+                                "Free Throws",
+                                "Free Throw Attempts",
+                                "Free Throw Percentage",
+                                "Offensive Rebounds",
+                                "Defensive Rebounds",
+                                "Total Rebounds",
+                                "Assists",
+                                "Steals",
+                                "Blocks",
+                                "Turnovers",
+                                "Personal Fouls",
+                                "Points",
+                                "Game Score",
+                            ]
+                        ] = season_df[
+                            [
+                                "Field Goals",
+                                "Field Goal Attempts",
+                                "Field Goal Percentage",
+                                "3-Point Field Goals",
+                                "3-Point Field Goal Attempts",
+                                "3-Point Field Goal Percentage",
+                                "Free Throws",
+                                "Free Throw Attempts",
+                                "Free Throw Percentage",
+                                "Offensive Rebounds",
+                                "Defensive Rebounds",
+                                "Total Rebounds",
+                                "Assists",
+                                "Steals",
+                                "Blocks",
+                                "Turnovers",
+                                "Personal Fouls",
+                                "Points",
+                                "Game Score",
+                            ]
+                        ].apply(
+                            lambda x: float(x)
                         )
 
                         # save to CSV, removing row indexes and keeping the headers
