@@ -87,7 +87,7 @@ def initialize_selenium_driver() -> webdriver.Firefox:
     return driver
 
 
-# error handles for issues that may arise in
+# error handles for issues that may arise
 def basic_error_handling(possible_error):
     if isinstance(possible_error, ValueError):
         print("ValueError: Invalid value provided.")
@@ -392,28 +392,6 @@ def convert_player_info_to_metric(player_dict_objects: list):
         player_dict_objects[i]["weight"] = float(player.get("weight")) * 0.453592
 
 
-# pass alphabet range and year range and save the corresponding html for future player search
-def find_players(start_letter: str, end_letter: str):
-    all_players_url = "https://www.basketball-reference.com/players/"
-    web_driver = initialize_selenium_driver()
-    # create array of letters
-    alphabet_range = [chr(i) for i in range(ord(start_letter), ord(end_letter) + 1)]
-
-    for letter in alphabet_range:
-        # concatenate each letter to make the new url's to browse through all players
-        new_url = rf"{all_players_url}{letter}"
-        # pass the url information to save the html data
-        selenium_request(
-            firefox_driver=web_driver,
-            request_url=new_url,
-            save_html=True,
-            file_path=rf"C:\Users\Michael\Code\Python\Data_scraping\alphabetic_players_grouped\letter_{letter}_data.html",
-        )
-
-    # quit web driver
-    web_driver.quit()
-
-
 # find players based on the seasons that they have played, pulling from html data already saved using the find_players function; returns list of dictionaries
 def find_players_by_year(
     start_letter: str, end_letter: str, start_year: int, end_year: int
@@ -426,14 +404,34 @@ def find_players_by_year(
 
     # take data from saved location
     for letter in alphabet_range:
+        # define file location
+        player_last_name_letter_file = rf"C:\Users\Michael\Code\Python\Data_scraping\alphabetic_players_grouped\letter_{letter}_players.html"
 
-        # open file containing the HTML data (with error handles)
-        with open(
-            rf"C:\Users\Michael\Code\Python\Data_scraping\alphabetic_players_grouped\letter_{letter}_players.html",
-            "r",
-            encoding="utf-8",
-        ) as file:
-            contents = file.read()
+        # check if the html file exists
+        if not os.path.isfile(player_last_name_letter_file):
+            web_driver = initialize_selenium_driver()
+            base_player_url = "https://www.basketball-reference.com/players/"
+            # pass the full url after appending to the end of the baseline url from list, along with file save location
+            selenium_request(
+                firefox_driver=web_driver,
+                request_url=rf"{base_player_url}{letter}",
+                save_html=True,
+                file_path=player_last_name_letter_file,
+            )
+
+            # quit webdriver
+            web_driver.quit()
+
+        # open html file
+        try:
+            with open(
+                rf"C:\Users\Michael\Code\Python\Data_scraping\alphabetic_players_grouped\letter_{letter}_players.html",
+                "r",
+                encoding="utf-8",
+            ) as file:
+                contents = file.read()
+        except Exception as e:
+            basic_error_handling(e)
 
         soup = BeautifulSoup(contents, "html.parser")
 
@@ -495,33 +493,40 @@ def find_players_by_year(
     return labeled_players
 
 
-# retrieve the player season statistics for all games in a given range of seasons using a list containing [[player name, url to their stats], ...]
+# retrieve the player season statistics for all games in a given range of seasons using a list containing dictionaries of player info
 def get_player_season_stats(player_name_with_url_list: list, season_range: range):
     # make list from year range
     season_list = list(season_range)
-    web_driver = initialize_selenium_driver()
 
     # iterate over list of player info [ player name, player url]
     for player_info in player_name_with_url_list:
-        # base url
-        baseline_url = "https://www.basketball-reference.com"
-        # pass the full url after appending to the end of the baseline url from list, along with file save location
-        selenium_request(
-            firefox_driver=web_driver,
-            request_url=rf"{baseline_url}{player_info[2]}",
-            save_html=True,
-            file_path=rf"C:\Users\Michael\Code\Python\Data_scraping\player_specific_data\{player_info[0]}_data.html",
-        )
+
+        # player html save file location
+        player_html_file = rf"C:\Users\Michael\Code\Python\Data_scraping\player_specific_data\{player_info[0]}_data.html"
+
+        if not os.path.isfile(player_html_file):
+            web_driver = initialize_selenium_driver()
+            # base url
+            baseline_url = "https://www.basketball-reference.com"
+            # pass the full url after appending to the end of the baseline url from list, along with file save location
+            selenium_request(
+                firefox_driver=web_driver,
+                request_url=rf"{baseline_url}{player_info[2]}",
+                save_html=True,
+                file_path=player_html_file,
+            )
+
+            # quit web driver
+            web_driver.quit()
+
         # open player html page
         with open(
-            rf"C:\Users\Michael\Code\Python\Data_scraping\player_specific_data\{player_info[0]}_data.html",
+            player_html_file,
             "r",
             encoding="utf-8",
         ) as file:
             contents = file.read()
 
-        # retrieve Series with player metrics to append, using player name/url
-        player_metrics_series = get_player_metrics(player_info)
         # make the soup
         soup_1 = BeautifulSoup(contents, "html.parser")
         # find the table of all season stats
@@ -758,9 +763,6 @@ def get_player_season_stats(player_name_with_url_list: list, season_range: range
                     print(
                         rf"No player season data found for {player_info[0]} in {season_year}"
                     )
-
-    # quit web driver
-    web_driver.quit()
 
 
 # used to find full game schedules for the years in the given range
