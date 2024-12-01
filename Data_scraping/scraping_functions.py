@@ -1,14 +1,17 @@
 import csv
+import json
 import os
 import pickle
 import random
 import re
+import sys
 import time
 from datetime import datetime
 from io import StringIO
 from pathlib import Path
 
 import pandas as pd
+import xmltojson
 from bs4 import BeautifulSoup
 from pandas import DataFrame
 from selenium import webdriver
@@ -84,13 +87,76 @@ def initialize_selenium_driver() -> webdriver.Firefox:
     return driver
 
 
+# error handles for issues that may arise in
+def basic_error_handling(possible_error):
+    if isinstance(possible_error, ValueError):
+        print("ValueError: Invalid value provided.")
+    elif isinstance(possible_error, ZeroDivisionError):
+        print("ZeroDivisionError: Division by zero is not allowed.")
+    elif isinstance(possible_error, FileNotFoundError):
+        print("File not found!")
+    elif isinstance(possible_error, PermissionError):
+        print("You don't have permission to access this file!")
+    else:
+        print(f"An unexpected error occurred: {possible_error}")
+
+
+# handles html table conversion to a dictionary; allows for transformation to JSON if needed
+def table_to_dictionary(table) -> list:
+    # *** in general the tables I target contain a thead section for headers, even if I don't extract the headers directly from there
+    if not table.find("thead"):
+        return None
+
+    # extract rows
+    all_rows_data = []
+    for table_row in table.find("tbody").find_all("tr"):
+        # make dictionary for label assignments
+        row_data_dict = {}
+
+        # iterate over tags in table rows
+        for row_cell_data in table_row.find_all(["td", "th"]):
+            # .get() to retrieve data in a given attribute
+            single_cell_data = row_cell_data.get("data-stat")
+            if not single_cell_data:
+                continue
+
+            data_header = single_cell_data.replace("*", "")
+            main_data_text = row_cell_data.get_text().replace("*", "")
+            # add {header : main_text} pair to the dict
+            row_data_dict[data_header] = main_data_text
+
+            for a_attribute_cell_data in row_cell_data.find_all("a"):
+                if a_attribute_cell_data is None:
+                    continue
+
+                # assign url header and info into the dict
+                url_header = rf"{single_cell_data}_url"
+                url_data = a_attribute_cell_data["href"]
+                # check if key is already in dict
+                # append if it is
+                if row_data_dict.get(url_header):
+                    row_data_dict[url_header].append(url_data)
+                # create it if it isn't
+                else:
+                    row_data_dict[url_header] = [url_data]
+
+        # append row data
+        if row_data_dict:
+            all_rows_data.append(row_data_dict)
+
+    return all_rows_data
+
+
 # utilize the pickle library to save the contents of a list or other data structure for later use (*not for DataFrames)
 def pickle_data(data_for_later, file_name: str):
-    with open(
-        rf"C:\Users\Michael\Code\Python\Data_scraping\pickled_data\{file_name}.pkl",
-        "wb",
-    ) as file:
-        pickle.dump(data_for_later, file)
+    try:
+        with open(
+            rf"C:\Users\Michael\Code\Python\Data_scraping\pickled_data\{file_name}.pkl",
+            "wb",
+        ) as file:
+            pickle.dump(data_for_later, file)
+    except Exception as e:
+        basic_error_handling(e)
 
 
 # retrieve the string literal of a variable name for ease of use when naming files
@@ -108,13 +174,17 @@ def get_team_abbreviations() -> DataFrame:
     # list to collect the rows of data
     team_table = []
     # open text file containing team name and abbreviations for all historical and current NBA teams, excluding only a few repeat teams that "re branded" circa ~1950's
-    with open(
-        rf"C:\Users\Michael\Code\Python\Data_scraping\nba_team_names.txt", "r"
-    ) as file:
-        for line in file:
-            # strip leading/trailing whitespace and split by tab
-            row = line.strip().split("\t")
-            team_table.append(row)
+    try:
+        with open(
+            rf"C:\Users\Michael\Code\Python\Data_scraping\nba_team_names.txt", "r"
+        ) as file:
+            for line in file:
+                # strip leading/trailing whitespace and split by tab
+                row = line.strip().split("\t")
+                team_table.append(row)
+    except Exception as e:
+        basic_error_handling(e)
+
     # place data into a DataFrame
     team_name_df = pd.DataFrame(team_table, columns=team_headers)
     # make all team abbreviations uppercase
@@ -256,14 +326,14 @@ def reformat_win_loss_margin(game_result: str) -> float:
     return float(win_data.group(1))
 
 
-# assigns all players a unique integer label for later model training; takes in the play name with url list of form: [[player name, player url], [player 2 name, player 2 url], ...]
+# assigns all players a unique integer label for later model training; takes in a list of player dictionaries and returns a modified dictionary with the int label
 def player_label(player_name_url_list: list) -> list:
-    # output list of the form: [[player name, player int label, player url], [player 2 name, player 2 int label, player 2 url], ...]
-    labeled_player = []
 
     # range to pull random numbers from; ~4800 NBA players ever; want to avoid simply assigning ascending numbers according to players in alphabetical order
-    start_int_range = 1
-    end_int_range = 10000
+    start_int_range: int = 1
+    range_scale: int = 20
+    end_int_range: int = range_scale * len(player_name_url_list)
+
     # create list of random integer pulling from the population within the range; no repeats
     random_numbers = random.sample(
         range(start_int_range, end_int_range + 1), len(player_name_url_list)
@@ -271,24 +341,55 @@ def player_label(player_name_url_list: list) -> list:
 
     # assigns random int within the specified range to each player
     for i, player_data in player_name_url_list:
-        temp_list = [player_data[0], random_numbers[i], player_data[1]]
-        labeled_player.append(temp_list)
+        if player_data.get("player_label"):
+            print(rf"Player already has a player_label")
+            continue
+
+        player_name_url_list[i]["player_label"] = random_numbers[i]
 
     # write to text file
     with open(
-        rf"C:\Users\Michael\Code\Python\Data_scraping\unique_player_labels\labeled_players.txt",
+        rf"C:\Users\Michael\Code\Python\Data_scraping\unique_player_labels\labeled_players.json",
         "w",
     ) as file:
-        for line in labeled_player:
-            file.write(line)
+        file.write(player_name_url_list)
 
     # pickle data
     pickle_data(
-        labeled_player,
+        player_name_url_list,
         rf"C:\Users\Michael\Code\Python\Data_scraping\unique_player_labels\labeled_players.pkl",
     )
 
-    return labeled_player
+    return player_name_url_list
+
+
+# converts player weight and height to metric as a float
+def convert_player_info_to_metric(player_dict_objects: list):
+    for i, player in enumerate(player_dict_objects):
+        if not player.get("height") or not player.get("weight"):
+            print(
+                rf"Error converting weight and height to metric for {player.get("player")}"
+            )
+            return
+
+        feet_search = re.search(r"(\d+)-", player)
+        if feet_search:
+            feet_to_cm = float(feet_search.group(1)) * 30.48
+
+        inches_search = re.search(r"-(\d+)", player)
+        if inches_search:
+            inches_to_cm = float(feet_search.group(1)) * 2.54
+
+        if not feet_to_cm or not inches_to_cm:
+            print(
+                rf"Error converting weight and height to metric for {player.get("player")}"
+            )
+            return
+
+        # height changed to cm
+        player_dict_objects[i]["height"] = feet_to_cm + inches_to_cm
+        # weight changed to kg
+        player_dict_objects[i]["weight"] = float(player.get("weight")) * 0.453592
 
 
 # pass alphabet range and year range and save the corresponding html for future player search
@@ -313,14 +414,14 @@ def find_players(start_letter: str, end_letter: str):
     web_driver.quit()
 
 
-# find players based on the seasons that they have played, pulling from html data already saved using the find_players function; returns a list of form: [[player name, player int label, player url], ...]
+# find players based on the seasons that they have played, pulling from html data already saved using the find_players function; returns list of dictionaries
 def find_players_by_year(
     start_letter: str, end_letter: str, start_year: int, end_year: int
 ) -> list:
     # create array of letters
     alphabet_range = [chr(i) for i in range(ord(start_letter), ord(end_letter) + 1)]
 
-    # empty array to collect player names
+    # list of dictionaries to contain player names, int label, and url extension
     player_names_with_url = []
 
     # take data from saved location
@@ -328,99 +429,70 @@ def find_players_by_year(
 
         # open file containing the HTML data (with error handles)
         with open(
-            rf"C:\Users\Michael\Code\Python\Data_scraping\alphabetic_players_grouped\letter_{letter}_data",
+            rf"C:\Users\Michael\Code\Python\Data_scraping\alphabetic_players_grouped\letter_{letter}_players.html",
             "r",
             encoding="utf-8",
         ) as file:
             contents = file.read()
 
         soup = BeautifulSoup(contents, "html.parser")
-        table = soup.find("table", id="players").find("tbody")
 
-        # iterates through the table data for players of a given last name starting letter
-        for element in table.find_all("tr"):
+        # find all player tables; should only be one
+        all_tables = soup.find_all("table", id="players")
+        # list of dictionary objects; each represents a player
+        dict_table_data = []
+
+        # iterate across the list of found table labels and
+        for table_info in all_tables:
+            tables_info_to_dict = table_to_dictionary(table_info)
+            if tables_info_to_dict is not None:
+                dict_table_data = [*dict_table_data, *tables_info_to_dict]
+
+        # save all players of a given letter into a JSON file
+        if dict_table_data:
+            with open(
+                rf"C:\Users\Michael\Code\Python\Data_scraping\alphabetic_players_grouped\letter_{letter}_players.json",
+                "w",
+            ) as file:
+                file.write(dict_table_data)
+        elif not dict_table_data:
+            print(rf"Error with Json_data writing for letter {letter}")
+
+        # iterates through the table data dictionary for players of a given last name starting letter
+        for player_object in dict_table_data:
+
             # gets the years played bounds
-            lower_year_bound = int(
-                element.find("td", {"data-stat": "year_min"}).get_text()
-            )
-            upper_year_bound = int(
-                element.find("td", {"data-stat": "year_max"}).get_text()
-            )
+            lower_year_bound = int(player_object["year_min"])
+            upper_year_bound = int(player_object["year_max"])
 
             # checks the years played by the player
             if (lower_year_bound >= start_year or upper_year_bound >= start_year) and (
                 lower_year_bound <= end_year
             ):
-                # if the player played during the years specified, create a list containing the name and url, then add that list to player_names_with_url
-                player_names_with_url.append(
-                    [
-                        element.find("th", {"data-stat": "player"})
-                        .find("a")
-                        .get_text(),
-                        element.find("th", {"data-stat": "player"}).find("a")["href"],
-                    ]
-                )
+                # if the player played during the years specified, add the info to the dictionary, then add that dict to player_names_with_url
+                temp_player_name_url_dict = {}
+                if player_object.get("player"):
+                    temp_player_name_url_dict["player"].append(
+                        player_object.get("player")
+                    )
+                else:
+                    temp_player_name_url_dict["player"].append(None)
 
+                if player_object.get("player_url"):
+                    # url list should always contain a single url
+                    temp_player_name_url_dict["player_url"].append(
+                        player_object.get("player_url")
+                    )
+                else:
+                    temp_player_name_url_dict["player_url"].append(None)
+                # add to overall player dictionary list
+                player_names_with_url.append(temp_player_name_url_dict)
+
+    # run all players through player label function to be assigned a random number
     labeled_players = player_label(player_names_with_url)
 
     # returns a list containing the player name with part of the url to navigate to their data page
     return labeled_players
-
-
-# retrieve the player metrics by passing the list containing the name and url of the player [player name, player label, url]
-def get_player_metrics(player_name_with_url: list) -> pd.Series:
-    # base url and web driver
-    baseline_url = "https://www.basketball-reference.com"
-    web_driver = initialize_selenium_driver()
-
-    # pass the full url after appending to the end of the baseline url from list
-    page_data = selenium_request(
-        firefox_driver=web_driver,
-        request_url=rf"{baseline_url}{player_name_with_url[1]}",
-    )
-    # make the soup
-    soup = BeautifulSoup(page_data, "html.parser")
-
-    # find specific branch of HTML data
-    full_player_stats = soup.find("div", id="meta")
-
-    # retrieve the str of data, ensure a space between lines/words, replace strange characters
-    player_metric_string = (
-        full_player_stats.get_text(separator=" ")
-        .replace("\xa0", " ")
-        .replace("\u25aa", "")
-        .strip()
-    )
-
-    # normalize whitespace to a single space; split() breaks the string into words by whitespace; join() fuses them back together with only a single whitespace between each word
-    single_line_output = " ".join(player_metric_string.split())
-
-    # array of strings containing player info, starting with their name and label
-    player_metrics = [player_name_with_url[0], player_name_with_url[1]]
-
-    # use re to collect the number for height
-    height = re.search(r"(\d+)cm", single_line_output)
-    if height:
-        player_metrics.append(float(height.group(1)))
-
-    # use re to collect the number for weight
-    weight = re.search(r"(\d+)kg", single_line_output)
-    if weight:
-        player_metrics.append(float(weight.group(1)))
-
-    player_metric_headers = [
-        "Name",
-        "Player_int_label",
-        "Height",
-        "Weight",
-    ]
-
-    # create the Series containing player info
-    player_metrics_series = pd.Series(data=player_metrics, index=player_metric_headers)
-
-    # quit driver
-    web_driver.quit()
-    return player_metrics_series
 
 
 # retrieve the player season statistics for all games in a given range of seasons using a list containing [[player name, url to their stats], ...]

@@ -16,7 +16,7 @@ import scraping_functions as scrape
 if __name__ == "__main__":
 
     # determine which portion of code to run
-    section_to_run = 6
+    section_to_run = 2
 
     match section_to_run:
         case 1:
@@ -26,31 +26,24 @@ if __name__ == "__main__":
             # returns large list containing smaller lists of 2 elements
             player_list = scrape.find_players_by_year("a", "z", 1980, 1981)
 
-        case 3:
-            # returns large list containing smaller lists of 2 elements
-            player_list = scrape.find_players_by_year("a", "z", 1980, 1981)
-
             # range (inclusive, exclusive)
             year_range = range(1980, 1981)
             scrape.get_player_season_stats(player_list, year_range)
 
-            # get the player-specific metrics
-            # player_metrics = scrape.get_player_metrics(player)
-
-        case 4:
+        case 3:
             season_schedule = scrape.full_games_schedule(1980, 1981)
 
-        case 5:
+        case 4:
             # range (inclusive, exclusive)
             set_range = range(1980, 1981)
             game_data_df = scrape.collect_players_in_game(set_range)
 
             # pickle the data for later use
 
-        case 6:
+        case 5:
             scrape.pickled_players_in_games_to_csv()
 
-        case 7:
+        case 6:
             # print(scrape.get_team_abbreviations())
             with open(
                 rf"C:\Users\Michael\Code\Python\Data_scraping\team_name_df.txt", "w"
